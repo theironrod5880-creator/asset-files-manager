@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Video — Mastercore Video</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #000; color: #f1f1f1; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  .bar { display: flex; align-items: center; gap: 10px; padding: 14px 16px; background: #0f0f0f; }
+  .bar a { color: #8ab4f8; text-decoration: none; font-weight: bold; flex-shrink: 0; }
+  .bar h1 { font-size: 1.1em; margin: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  video { width: 100%; max-height: calc(100vh - 130px); background: #000; display: block; }
+  .controls { padding: 14px 16px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; background: #0f0f0f; }
+  button, .btn { background: #fff; color: #000; border: none; font-weight: bold; padding: 10px 18px; border-radius: 20px; cursor: pointer; font-size: 0.95em; }
+  .btn-red { background: #ff0000; color: #fff; }
+  .hint { color: #aaa; font-size: 0.9em; padding: 0 16px 16px 16px; }
+  input[type="file"] { display: none; }
+</style>
+</head>
+<body>
+  <div class="bar">
+    <a href="index.html">← Home</a>
+    <h1 id="videoTitle">Video</h1>
+  </div>
+  <video id="player" controls autoplay muted playsinline></video>
+  <div class="controls">
+    <button id="soundBtn" onclick="toggleSound()">🔊 Sound on</button>
+    <label class="btn" for="pickOne">Choose a different video</label>
+    <input type="file" id="pickOne" accept="video/*">
+  </div>
+  <p class="hint" id="hint">Loading…</p>
+
+<script>
+  const player = document.getElementById('player');
+  const titleEl = document.getElementById('videoTitle');
+  const hintEl = document.getElementById('hint');
+  const params = new URLSearchParams(location.search);
+
+  function playUrl(url, title, hint) {
+    player.src = url;
+    player.play().catch(() => {});
+    titleEl.textContent = title;
+    hintEl.textContent = hint;
+  }
+
+  function toggleSound() {
+    player.muted = !player.muted;
+    if (!player.muted) player.play().catch(() => {});
+    document.getElementById('soundBtn').textContent = player.muted ? '🔊 Sound on' : '🔇 Mute';
+  }
+
+  document.getElementById('pickOne').addEventListener('change', (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    playUrl(URL.createObjectURL(file), file.name.replace(/\.[^/.]+$/, ''), 'Playing a video picked from this phone. It is not uploaded anywhere.');
+    event.target.value = '';
+  });
+
+  if (params.has('i')) {
+    fetch('videos.json')
+      .then(r => r.json())
+      .then(data => {
+        const v = (data.videos || [])[Number(params.get('i'))];
+        if (!v) { hintEl.textContent = 'No video at that number in videos.json.'; return; }
+        playUrl(v.file, v.title, v.note || ('File: ' + v.file));
+      })
+      .catch(() => { hintEl.textContent = 'Could not load videos.json — open this page through a server or GitHub Pages, not straight from the file.'; });
+  } else if (params.has('session')) {
+    let list = [];
+    try { list = JSON.parse(sessionStorage.getItem('master_video_session')) || []; } catch (e) { list = []; }
+    const v = list[Number(params.get('session'))];
+    if (!v || !v._url) {
+      hintEl.textContent = 'That clip is not linked in this tab. Go home and pick the video again — it will relink by name and size.';
+    } else {
+      playUrl(v._url, v.title, 'Playing a video picked from this phone. It is not uploaded anywhere.');
+    }
+  } else {
+    hintEl.textContent = 'No video chosen. Tap "Choose a different video" to pick one from this phone, or go home and tap Play on a listed video.';
+  }
+</script>
+</body>
+</html>

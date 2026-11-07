@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mastercore Video</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0f0f0f; color: #f1f1f1; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 20px; }
+  h1 { font-size: 1.5em; margin: 0 0 4px 0; }
+  .sub { color: #aaa; margin: 0 0 20px 0; }
+  .card { background: #181818; border: 1px solid #282828; border-radius: 12px; padding: 16px; margin-bottom: 12px; }
+  .card h2 { margin: 0 0 6px 0; font-size: 1.1em; }
+  .card p { color: #aaa; margin: 0 0 12px 0; font-size: 0.9em; }
+  button, .btn { background: #fff; color: #000; border: none; font-weight: bold; padding: 10px 18px; border-radius: 20px; cursor: pointer; font-size: 0.95em; text-decoration: none; display: inline-block; }
+  .btn-red { background: #ff0000; color: #fff; }
+  .btn-blue { background: #4285f4; color: #fff; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+  .video-card { background: #181818; border: 1px solid #282828; border-radius: 12px; padding: 14px; }
+  .video-card h3 { margin: 0 0 4px 0; font-size: 1em; }
+  .video-card p { color: #aaa; margin: 0 0 10px 0; font-size: 0.85em; word-break: break-all; }
+  .note { color: #ffb86b; font-size: 0.85em; }
+  input[type="file"] { display: none; }
+  a { color: #8ab4f8; }
+</style>
+</head>
+<body>
+  <h1>🎬 Mastercore Video</h1>
+  <p class="sub">Home — your videos, in one place.</p>
+
+  <div class="card">
+    <h2>📁 Storage access</h2>
+    <p>Tap below and pick videos from this phone. Your phone asks which files to share — nothing is uploaded anywhere. Picked videos play right away and stay listed until you clear them.</p>
+    <label class="btn btn-blue" for="pickFiles">Choose videos from this phone</label>
+    <input type="file" id="pickFiles" accept="video/*" multiple>
+    <button onclick="clearSession()" style="margin-left:6px;">Clear picked list</button>
+    <p class="note" id="storageStatus"></p>
+  </div>
+
+  <h2 style="font-size:1.15em;">Your videos</h2>
+  <div class="grid" id="videoGrid"><p style="color:#aaa;">Loading videos.json…</p></div>
+
+  <h2 style="font-size:1.15em;">Picked from this phone</h2>
+  <div class="grid" id="sessionGrid"><p style="color:#aaa;">None yet — pick videos above.</p></div>
+
+  <p style="color:#666; font-size:0.85em; margin-top:24px;">Mastercore Video starter · videos live in <code>assets/</code> · catalog in <code>videos.json</code></p>
+
+<script>
+  const SESSION_KEY = 'master_video_session';
+  let catalog = [];
+  let sessionList = [];
+  try { sessionList = JSON.parse(localStorage.getItem(SESSION_KEY)) || []; } catch (e) { sessionList = []; }
+  sessionList = sessionList.map(v => ({ title: v.title, size: v.size })); // live links are memory-only
+
+  function saveSession() {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(sessionList.map(v => ({ title: v.title, size: v.size }))));
+  }
+  function fmtSize(bytes) { return (bytes / (1024 * 1024)).toFixed(1) + ' MB'; }
+  function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+  function renderCatalog() {
+    const grid = document.getElementById('videoGrid');
+    if (!catalog.length) { grid.innerHTML = '<p style="color:#aaa;">No videos in videos.json yet — add files to assets/ and list them there.</p>'; return; }
+    grid.innerHTML = catalog.map((v, i) =>
+      `<div class="video-card"><h3>${esc(v.title)}</h3><p>${esc(v.file)}</p><a class="btn btn-red" href="video.html?i=${i}">▶ Play</a></div>`
+    ).join('');
+  }
+
+  function renderSession() {
+    const grid = document.getElementById('sessionGrid');
+    document.getElementById('storageStatus').textContent =
+      sessionList.length ? sessionList.length + ' picked video(s) saved on this device.' : '';
+    if (!sessionList.length) { grid.innerHTML = '<p style="color:#aaa;">None yet — pick videos above.</p>'; return; }
+    grid.innerHTML = sessionList.map((v, i) => {
+      const linked = !!v._url;
+      const btn = linked
+        ? `<a class="btn btn-red" href="video.html?session=${i}">▶ Play</a>`
+        : `<span class="note">Not linked — pick the videos again to relink.</span>`;
+      return `<div class="video-card"><h3>${esc(v.title)}</h3><p>${esc(v.size || '')}</p>${btn}</div>`;
+    }).join('');
+  }
+
+  function storeSessionForPlayer() {
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(sessionList));
+  }
+
+  document.getElementById('pickFiles').addEventListener('change', (event) => {
+    const files = event.target.files;
+    let added = 0, relinked = 0;
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (!file.type.startsWith('video/')) continue;
+      const title = file.name.replace(/\.[^/.]+$/, '');
+      const size = fmtSize(file.size);
+      const existing = sessionList.find(v => v.title === title && v.size === size);
+      if (existing) { existing._url = URL.createObjectURL(file); relinked++; }
+      else { sessionList.push({ title, size, _url: URL.createObjectURL(file) }); added++; }
+    }
+    saveSession();
+    storeSessionForPlayer();
+    renderSession();
+    event.target.value = '';
+    if (added || relinked) alert(`Added ${added} new, relinked ${relinked}. Tap Play on a clip to watch it.`);
+  });
+
+  function clearSession() {
+    sessionList = [];
+    saveSession();
+    sessionStorage.removeItem(SESSION_KEY);
+    renderSession();
+  }
+
+  fetch('videos.json')
+    .then(r => r.json())
+    .then(data => { catalog = data.videos || []; renderCatalog(); })
+    .catch(() => { document.getElementById('videoGrid').innerHTML = '<p style="color:#e74c3c;">Could not load videos.json — open this page through a server (Termux: python3 -m http.server) or GitHub Pages, not straight from the file.</p>'; });
+
+  renderSession();
+</script>
+</body>
+</html>
