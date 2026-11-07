@@ -1,9 +1,9 @@
-m<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Mastercore — Studio & Vault Suite</title>
+<title>Mastercore — Music Studio & Google Drive Sync</title>
 <style>
   * { box-sizing: border-box; }
   body {
@@ -11,216 +11,151 @@ m<!DOCTYPE html>
     background: #0f0f0f; color: #f1f1f1;
     margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden;
   }
-  
   .app-container { display: flex; flex: 1; overflow: hidden; }
-  
   aside {
     width: 240px; background: #212121; border-right: 1px solid #383838;
-    display: flex; flex-direction: column; padding: 20px; gap: 12px; shrink: 0;
+    display: flex; flex-direction: column; padding: 20px; gap: 12px; flex-shrink: 0;
   }
-  aside h2 { color: #ff0000; font-size: 1.2em; margin: 0 0 10px 0; letter-spacing: 0.5px; }
+  aside h2 { color: #ff0000; font-size: 1.2em; margin: 0 0 10px 0; }
   .nav-btn {
     background: transparent; border: none; color: #aaa; text-align: left;
     padding: 12px 14px; border-radius: 8px; cursor: pointer; font-size: 0.95em; font-weight: 500;
   }
   .nav-btn:hover, .nav-btn.active { background: #3f3f3f; color: #fff; font-weight: bold; }
+  main { flex: 1; background: #0f0f0f; padding: 25px; overflow-y: auto; padding-bottom: 100px; }
+  h1 { font-size: 1.6em; margin-top: 0; color: #fff; }
+  .section-title { font-size: 1.15em; margin: 20px 0 10px 0; color: #fff; border-bottom: 1px solid #383838; padding-bottom: 6px; }
 
-  main { flex: 1; background: #0f0f0f; padding: 30px; overflow-y: auto; }
-  h1 { font-size: 1.8em; margin-top: 0; color: #fff; }
-  .section-title { font-size: 1.2em; margin: 20px 0 12px 0; color: #fff; border-bottom: 1px solid #383838; padding-bottom: 6px; }
-
-  /* Cards / Grid Layout */
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 18px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 15px; }
   .card {
-    background: #181818; padding: 14px; border-radius: 12px; cursor: pointer;
-    transition: background 0.2s; position: relative; border: 1px solid #282828;
+    background: #181818; padding: 12px; border-radius: 10px; cursor: pointer;
+    transition: background 0.2s; border: 1px solid #282828;
   }
   .card:hover { background: #282828; }
   .card-thumb {
-    width: 100%; aspect-ratio: 16/9; background: #282828; border-radius: 8px;
-    display: flex; align-items: center; justify-content: center; font-size: 2.2em; color: #666; margin-bottom: 10px;
+    width: 100%; aspect-ratio: 16/9; background: #282828; border-radius: 6px;
+    display: flex; align-items: center; justify-content: center; font-size: 1.8em; color: #666; margin-bottom: 8px;
   }
-  .card-title { font-weight: bold; font-size: 0.95em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 4px; }
-  .card-sub { color: #aaa; font-size: 0.8em; }
+  .card-title { font-weight: bold; font-size: 0.9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-  /* Video Display Workspace */
-  .video-stage {
-    background: #000; border-radius: 12px; overflow: hidden; margin-bottom: 20px;
-    display: flex; flex-direction: column; align-items: center; border: 1px solid #383838;
-  }
-  video { width: 100%; max-height: 480px; background: #000; outline: none; }
-
-  /* Lists & Tables */
   table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.9em; }
   th { text-align: left; color: #aaa; border-bottom: 1px solid #383838; padding: 10px; }
-  td { padding: 12px 10px; border-bottom: 1px solid #222; vertical-align: middle; }
-  tr:hover td { background: #1a1a1a; }
-
-  /* Form Elements */
+  td { padding: 10px; border-bottom: 1px solid #222; vertical-align: middle; }
   input[type="text"], input[type="file"], select {
     background: #121212; border: 1px solid #383838; color: #fff;
     padding: 10px; border-radius: 8px; width: 100%; margin-bottom: 12px;
   }
   button {
     background: #fff; color: #000; border: none; font-weight: bold;
-    padding: 10px 18px; border-radius: 20px; cursor: pointer; margin-right: 8px; margin-bottom: 8px;
+    padding: 9px 16px; border-radius: 20px; cursor: pointer; margin-right: 6px; margin-bottom: 6px;
   }
   button:hover { background: #d3d3d3; }
   .btn-red { background: #ff0000; color: #fff; }
   .btn-red:hover { background: #cc0000; }
+  .btn-blue { background: #4285f4; color: #fff; }
+  .btn-blue:hover { background: #3367d6; }
 
-  /* Audio Dock Player Bar */
   .player-bar {
-    height: 75px; background: #212121; border-top: 1px solid #383838;
-    display: flex; align-items: center; justify-content: space-between; padding: 0 20px; z-index: 10;
+    position: fixed; bottom: 0; left: 0; right: 0; height: 75px; background: #1a1a1a;
+    border-top: 1px solid #383838; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; z-index: 1000;
   }
-  .player-info { display: flex; align-items: center; gap: 15px; width: 25%; }
+  .player-info { display: flex; align-items: center; gap: 12px; width: 30%; }
   .player-thumb { width: 45px; height: 45px; background: #333; border-radius: 6px; display: flex; align-items: center; justify-content: center; }
-  .player-meta .title { font-size: 0.9em; font-weight: bold; }
+  .player-meta .title { font-size: 0.85em; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .player-meta .sub { font-size: 0.75em; color: #aaa; }
-  
-  .player-controls { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 50%; }
-  .control-btns { display: flex; align-items: center; gap: 20px; }
+  .player-controls { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 40%; }
+  .control-btns { display: flex; align-items: center; gap: 15px; }
   .control-btns button { background: transparent; color: #fff; font-size: 1.1em; padding: 5px; border-radius: 50%; margin: 0; }
-  .control-btns button:hover { background: rgba(255,255,255,0.1); }
-  
-  .progress-container { display: flex; align-items: center; gap: 10px; width: 100%; max-width: 500px; font-size: 0.75em; color: #aaa; }
+  .progress-container { display: flex; align-items: center; gap: 10px; width: 100%; font-size: 0.75em; color: #aaa; }
   input[type="range"] { flex: 1; accent-color: #ff0000; cursor: pointer; }
-
-  .player-extra { display: flex; align-items: center; justify-content: flex-end; width: 25%; }
 
   .view { display: none; }
   .view.active { display: block; }
-
   @media(max-width: 768px) { aside { display: none; } }
 </style>
+<!-- Google Identity Services SDK -->
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 
 <div class="app-container">
-  <!-- Unified Navigation Sidebar -->
   <aside>
-    <h2>MASTERCORE</h2>
+    <h2>MUSIC STUDIO</h2>
     <button class="nav-btn active" onclick="switchTab('homeTab', this)">🏠 Home Dashboard</button>
-    <button class="nav-btn" onclick="switchTab('musicTab', this)">🎵 Music Player</button>
-    <button class="nav-btn" onclick="switchTab('videoTab', this)">🎬 Video Player</button>
-    <button class="nav-btn" onclick="switchTab('recorderTab', this)">🎙️ Voice Recorder</button>
-    <button class="nav-btn" onclick="switchTab('backupTab', this)">💾 Backup & Restore</button>
+    <button class="nav-btn" onclick="switchTab('libraryTab', this)">🎵 Music Library</button>
+    <button class="nav-btn" onclick="switchTab('gdriveTab', this)">☁️ Google Drive Storage</button>
+    <hr style="border-color:#383838; width:100%; margin:10px 0;">
+    <button class="nav-btn" onclick="window.location.href='video.html'" style="color:#ffb86b;">🎬 Video Studio ↗</button>
   </aside>
 
   <main>
-    <!-- 1. HOME DASHBOARD -->
+    <!-- 1. HOME -->
     <div id="homeTab" class="view active">
-      <h1>Home Dashboard</h1>
-      <p style="color:#aaa;">Welcome to your studio. Scan local Android media folders or pick from your active index.</p>
-      
+      <h1>Music Dashboard</h1>
       <div style="background:#181818; padding:20px; border-radius:12px; margin-bottom:25px; border:1px solid #282828;">
-        <h3 style="margin-top:0; color:#fff;">📁 Add Media from Android Device / OTG</h3>
-        <p style="color:#aaa; font-size:0.85em;">Select any local music or video folder to automatically index playing media files.</p>
-        <input type="file" webkitdirectory directory multiple onchange="scanLocalDirectory(event)">
+        <h3 style="margin-top:0; color:#fff;">📁 Scan Android Local / OTG Music Folder</h3>
+        <input type="file" webkitdirectory directory multiple accept="audio/*" onchange="scanMusicFolder(event)">
       </div>
-
-      <div class="section-title">Music Picks</div>
+      <div class="section-title">Quick Picks</div>
       <div class="grid" id="homeMusicGrid"></div>
-
-      <div class="section-title" style="margin-top:30px;">Video Clips</div>
-      <div class="grid" id="homeVideoGrid"></div>
     </div>
 
-    <!-- 2. MUSIC PLAYER TAB -->
-    <div id="musicTab" class="view">
-      <h1>Music Player & Library</h1>
-      <input type="text" id="searchAudio" placeholder="Search audio files..." oninput="renderAudioTable()">
+    <!-- 2. LIBRARY -->
+    <div id="libraryTab" class="view">
+      <h1>Music Library Index</h1>
       <table>
         <thead><tr><th>#</th><th>Title</th><th>Size</th><th>Action</th></tr></thead>
         <tbody id="audioTableBody"></tbody>
       </table>
     </div>
 
-    <!-- 3. VIDEO PLAYER TAB -->
-    <div id="videoTab" class="view">
-      <h1>Video Player Studio</h1>
+    <!-- 3. GOOGLE DRIVE STORAGE -->
+    <div id="gdriveTab" class="view">
+      <h1>Google Drive Storage & Cloud Backup</h1>
+      <p style="color:#aaa;">Connect your Google account to back up and sync your music library metadata and playlist indexes directly to Google Drive.</p>
       
-      <div class="video-stage">
-        <video id="stageVideo" controls></video>
-      </div>
-
-      <div style="background:#181818; padding:15px; border-radius:10px; margin-bottom:20px;">
-        <div id="nowPlayingVideoTitle" style="font-weight:bold; font-size:1.1em;">No Video Loaded</div>
-        <div id="nowPlayingVideoSub" style="color:#aaa; font-size:0.85em;">Select a video from the list below to play.</div>
-      </div>
-
-      <div class="section-title">Video Library Index</div>
-      <table>
-        <thead><tr><th>#</th><th>Title</th><th>Size</th><th>Action</th></tr></thead>
-        <tbody id="videoTableBody"></tbody>
-      </table>
-    </div>
-
-    <!-- 4. VOICE RECORDER TAB -->
-    <div id="recorderTab" class="view">
-      <h1>Voice Recorder</h1>
-      <div style="background:#181818; padding:30px; border-radius:12px; text-align:center;">
-        <div id="recStatus" style="font-size:1.2em; margin-bottom:15px; color:#ff0000;">Ready</div>
-        <button class="btn-red" id="recStartBtn" onclick="startMicRecording()">Start Recording</button>
-        <button id="recStopBtn" onclick="stopMicRecording()" disabled>Stop & Save</button>
-      </div>
-    </div>
-
-    <!-- 5. BACKUP TAB -->
-    <div id="backupTab" class="view">
-      <h1>Backup & Restore</h1>
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
-        <div style="background:#181818; padding:20px; border-radius:12px;">
-          <h3>Export Backup</h3>
-          <button class="btn-red" onclick="exportDataJSON()">Download JSON</button>
-        </div>
-        <div style="background:#181818; padding:20px; border-radius:12px;">
-          <h3>Import Backup</h3>
-          <input type="file" accept=".json" onchange="importDataJSON(event)">
-        </div>
+      <div style="background:#181818; padding:20px; border-radius:12px; border:1px solid #282828; margin-top:20px;">
+        <div id="authStatus" style="font-weight:bold; margin-bottom:15px; color:#ffb86b;">Status: Not Connected to Google Drive</div>
+        <button class="btn-blue" onclick="handleAuthClick()">Connect Google Drive</button>
+        <button class="btn-red" onclick="saveToGoogleDrive()" id="saveDriveBtn" disabled>☁️ Save Backup to Google Drive</button>
+        <button onclick="loadFromGoogleDrive()" id="loadDriveBtn" disabled>📥 Restore Backup from Google Drive</button>
+        <div id="driveMsg" style="margin-top:15px; font-size:0.9em;"></div>
       </div>
     </div>
   </main>
 </div>
 
-<!-- Docked Bottom Player Bar for Audio -->
+<!-- Player Bar -->
 <div class="player-bar">
   <div class="player-info">
     <div class="player-thumb">🎵</div>
     <div class="player-meta">
-      <div class="title" id="barAudioTitle">No Audio Selected</div>
-      <div class="sub" id="barAudioSub">Mastercore Studio</div>
+      <div class="title" id="barTitle">No Audio Selected</div>
+      <div class="sub" id="barSub">Mastercore Studio</div>
     </div>
   </div>
-
   <div class="player-controls">
     <div class="control-btns">
-      <button onclick="playPrevAudio()">⏮</button>
-      <button id="audioPlayBtn" onclick="toggleAudioPlay()">▶</button>
-      <button onclick="playNextAudio()">⏭</button>
+      <button onclick="playPrev()">⏮</button>
+      <button id="playBtn" onclick="togglePlay()">▶</button>
+      <button onclick="playNext()">⏭</button>
     </div>
     <div class="progress-container">
-      <span id="audioCurrentTime">0:00</span>
-      <input type="range" id="audioSeekBar" value="0" max="100" oninput="seekAudio(this.value)">
-      <span id="audioDuration">0:00</span>
+      <span id="currentTime">0:00</span>
+      <input type="range" id="seekBar" value="0" max="100" oninput="seekAudio(this.value)">
+      <span id="duration">0:00</span>
     </div>
   </div>
-
-  <div class="player-extra">
-    <input type="range" min="0" max="1" step="0.01" value="1" oninput="document.getElementById('audioEngine').volume=this.value" style="width: 90px;">
-  </div>
+  <div style="width: 30%;"></div>
 </div>
 
-<audio id="audioEngine" ontimeupdate="updateAudioProgress()" onended="playNextAudio()"></audio>
+<audio id="audioEngine" ontimeupdate="updateProgress()" onended="playNext()"></audio>
 
 <script>
-  // In-Memory Storage for File Object Instances
-  let mediaStore = { audio: [], video: [] };
+  let musicLibrary = JSON.parse(localStorage.getItem('master_music_lib')) || [];
   let currentAudioIndex = -1;
-  let mediaRecorder, micChunks = [];
+  let accessToken = null;
 
-  // Tab Navigation Engine
   function switchTab(tabId, btn) {
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
     document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
@@ -228,223 +163,147 @@ m<!DOCTYPE html>
     btn.classList.add('active');
   }
 
-  // File Scanner with Direct Browser Blob Persistence
-  function scanLocalDirectory(event) {
+  function scanMusicFolder(event) {
     const files = event.target.files;
-    let audioAdded = 0, videoAdded = 0;
-
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      const blobUrl = URL.createObjectURL(file);
-
-      if (file.type.startsWith('audio/') || file.name.match(/\.(mp3|wav|m4a|aac|ogg|flac)$/i)) {
-        mediaStore.audio.push({
-          id: 'aud_' + Date.now() + '_' + i,
+      if (file.type.startsWith('audio/') || file.name.match(/\.(mp3|wav|m4a|aac)$/i)) {
+        musicLibrary.push({
           title: file.name.replace(/\.[^/.]+$/, ""),
           size: (file.size / (1024*1024)).toFixed(1) + ' MB',
-          url: blobUrl
+          url: URL.createObjectURL(file)
         });
-        audioAdded++;
-      } else if (file.type.startsWith('video/') || file.name.match(/\.(mp4|webm|mkv|mov)$/i)) {
-        mediaStore.video.push({
-          id: 'vid_' + Date.now() + '_' + i,
-          title: file.name.replace(/\.[^/.]+$/, ""),
-          size: (file.size / (1024*1024)).toFixed(1) + ' MB',
-          url: blobUrl
-        });
-        videoAdded++;
       }
     }
-
-    renderAllViews();
-    alert(`Indexed ${audioAdded} audio tracks and ${videoAdded} video clips!`);
+    localStorage.setItem('master_music_lib', JSON.stringify(musicLibrary));
+    renderMusic();
+    alert(`Indexed ${musicLibrary.length} music tracks!`);
   }
 
-  // Render Engine for Grids and Tables
-  function renderAllViews() {
-    renderHomeGrids();
-    renderAudioTable();
-    renderVideoTable();
-  }
-
-  function renderHomeGrids() {
-    const musicGrid = document.getElementById('homeMusicGrid');
-    const videoGrid = document.getElementById('homeVideoGrid');
-    
-    musicGrid.innerHTML = mediaStore.audio.length ? '' : '<p style="color:#aaa;">No music added.</p>';
-    mediaStore.audio.forEach((item, idx) => {
-      musicGrid.innerHTML += `
-        <div class="card" onclick="playAudioTrack(${idx})">
-          <div class="card-thumb">🎵</div>
-          <div class="card-title">${item.title}</div>
-          <div class="card-sub">${item.size}</div>
-        </div>`;
+  function renderMusic() {
+    const grid = document.getElementById('homeMusicGrid');
+    grid.innerHTML = musicLibrary.length ? '' : '<p style="color:#aaa;">No music scanned yet.</p>';
+    musicLibrary.forEach((m, idx) => {
+      grid.innerHTML += `<div class="card" onclick="playTrack(${idx})"><div class="card-thumb">🎵</div><div class="card-title">${m.title}</div></div>`;
     });
 
-    videoGrid.innerHTML = mediaStore.video.length ? '' : '<p style="color:#aaa;">No videos added.</p>';
-    mediaStore.video.forEach((item, idx) => {
-      videoGrid.innerHTML += `
-        <div class="card" onclick="playVideoClip(${idx})">
-          <div class="card-thumb">🎬</div>
-          <div class="card-title">${item.title}</div>
-          <div class="card-sub">${item.size}</div>
-        </div>`;
-    });
-  }
-
-  function renderAudioTable() {
     const tbody = document.getElementById('audioTableBody');
-    const query = document.getElementById('searchAudio').value.toLowerCase();
     tbody.innerHTML = '';
-    
-    mediaStore.audio.filter(a => a.title.toLowerCase().includes(query)).forEach((item, idx) => {
-      tbody.innerHTML += `
-        <tr>
-          <td>${idx + 1}</td>
-          <td><b>${item.title}</b></td>
-          <td>${item.size}</td>
-          <td><button onclick="playAudioTrack(${idx})">Play</button></td>
-        </tr>`;
+    musicLibrary.forEach((m, idx) => {
+      tbody.innerHTML += `<tr><td>${idx+1}</td><td><b>${m.title}</b></td><td>${m.size}</td><td><button onclick="playTrack(${idx})">Play</button></td></tr>`;
     });
   }
 
-  function renderVideoTable() {
-    const tbody = document.getElementById('videoTableBody');
-    tbody.innerHTML = '';
-    
-    mediaStore.video.forEach((item, idx) => {
-      tbody.innerHTML += `
-        <tr>
-          <td>${idx + 1}</td>
-          <td><b>${item.title}</b></td>
-          <td>${item.size}</td>
-          <td><button class="btn-red" onclick="playVideoClip(${idx})">Play</button></td>
-        </tr>`;
-    });
-  }
-
-  // Audio Playback Engine
   const audioEngine = document.getElementById('audioEngine');
-
-  function playAudioTrack(idx) {
+  function playTrack(idx) {
     currentAudioIndex = idx;
-    const track = mediaStore.audio[idx];
-    audioEngine.src = track.url;
+    const t = musicLibrary[idx];
+    audioEngine.src = t.url;
     audioEngine.play();
-
-    document.getElementById('barAudioTitle').textContent = track.title;
-    document.getElementById('barAudioSub').textContent = track.size;
-    document.getElementById('audioPlayBtn').textContent = '⏸';
-
-    if ('mediaSession' in navigator) {
-      navigator.mediaSession.metadata = new MediaMetadata({ title: track.title, artist: 'Mastercore Vault' });
-    }
+    document.getElementById('barTitle').textContent = t.title;
+    document.getElementById('barSub').textContent = t.size;
+    document.getElementById('playBtn').textContent = '⏸';
   }
 
-  function toggleAudioPlay() {
-    if (currentAudioIndex === -1 && mediaStore.audio.length > 0) { playAudioTrack(0); return; }
-    if (audioEngine.paused) { audioElement.play(); document.getElementById('audioPlayBtn').textContent = '⏸'; }
-    else { audioEngine.pause(); document.getElementById('audioPlayBtn').textContent = '▶'; }
+  function togglePlay() {
+    if (currentAudioIndex === -1 && musicLibrary.length) { playTrack(0); return; }
+    if (audioEngine.paused) { audioEngine.play(); document.getElementById('playBtn').textContent = '⏸'; }
+    else { audioEngine.pause(); document.getElementById('playBtn').textContent = '▶'; }
   }
 
-  function playNextAudio() {
-    if (mediaStore.audio.length === 0) return;
-    currentAudioIndex = (currentAudioIndex + 1) % mediaStore.audio.length;
-    playAudioTrack(currentAudioIndex);
+  function playNext() {
+    if (!musicLibrary.length) return;
+    currentAudioIndex = (currentAudioIndex + 1) % musicLibrary.length;
+    playTrack(currentAudioIndex);
+  }
+  function playPrev() {
+    if (!musicLibrary.length) return;
+    currentAudioIndex = (currentAudioIndex - 1 + musicLibrary.length) % musicLibrary.length;
+    playTrack(currentAudioIndex);
   }
 
-  function playPrevAudio() {
-    if (mediaStore.audio.length === 0) return;
-    currentAudioIndex = (currentAudioIndex - 1 + mediaStore.audio.length) % mediaStore.audio.length;
-    playAudioTrack(currentAudioIndex);
-  }
-
-  function updateAudioProgress() {
+  function updateProgress() {
     if (!audioEngine.duration) return;
-    document.getElementById('audioSeekBar').value = (audioEngine.currentTime / audioEngine.duration) * 100;
-    document.getElementById('audioCurrentTime').textContent = formatTime(audioEngine.currentTime);
-    document.getElementById('audioDuration').textContent = formatTime(audioEngine.duration);
+    document.getElementById('seekBar').value = (audioEngine.currentTime / audioEngine.duration) * 100;
+    document.getElementById('currentTime').textContent = formatTime(audioEngine.currentTime);
+    document.getElementById('duration').textContent = formatTime(audioEngine.duration);
   }
-
   function seekAudio(val) {
     if (audioEngine.duration) audioEngine.currentTime = (val / 100) * audioEngine.duration;
   }
-
-  // Video Playback Engine
-  function playVideoClip(idx) {
-    const video = mediaStore.video[idx];
-    const player = document.getElementById('stageVideo');
-    player.src = video.url;
-    player.play();
-
-    document.getElementById('nowPlayingVideoTitle').textContent = video.title;
-    document.getElementById('nowPlayingVideoSub').textContent = video.size;
-    
-    // Automatically switch view to Video tab if clicked from Home Dashboard
-    switchTab('videoTab', document.querySelectorAll('.nav-btn')[2]);
-  }
-
   function formatTime(sec) {
     let m = Math.floor(sec / 60), s = Math.floor(sec % 60);
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   }
 
-  // Voice Recording
-  async function startMicRecording() {
-    micChunks = [];
+  // Google Drive Integration via Google Identity Services
+  function handleAuthClick() {
+    // Note: Replace with your actual Google Cloud Console OAuth Client ID for full integration
+    const client = google.accounts.oauth2.initTokenClient({
+      client_id: 'YOUR_CLIENT_ID.apps.googleusercontent.com', // User can insert their Google Cloud Client ID
+      scope: 'https://www.googleapis.com/auth/drive.file',
+      callback: (response) => {
+        if (response.access_token) {
+          accessToken = response.access_token;
+          document.getElementById('authStatus').textContent = 'Status: Connected to Google Drive ✅';
+          document.getElementById('authStatus').style.color = '#2ecc71';
+          document.getElementById('saveDriveBtn').disabled = false;
+          document.getElementById('loadDriveBtn').disabled = false;
+          document.getElementById('driveMsg').textContent = 'Successfully authenticated with Google Drive.';
+        }
+      },
+    });
+    client.requestAccessToken();
+  }
+
+  async function saveToGoogleDrive() {
+    if (!accessToken) { alert('Please connect Google Drive first.'); return; }
+    const metadata = { name: 'mastercore_music_backup.json', mimeType: 'application/json' };
+    const fileContent = JSON.stringify(musicLibrary.map(m => ({ title: m.title, size: m.size })));
+    
+    const form = new FormData();
+    form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+    form.append('file', new Blob([fileContent], { type: 'application/json' }));
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorder = new MediaRecorder(stream);
-      mediaRecorder.ondataavailable = e => micChunks.push(e.data);
-      mediaRecorder.onstop = () => {
-        const blob = new Blob(micChunks, { type: 'audio/webm' });
-        mediaStore.audio.push({
-          id: 'mic_' + Date.now(),
-          title: `Voice Note ${new Date().toLocaleTimeString()}`,
-          size: (blob.size / 1024).toFixed(1) + ' KB',
-          url: URL.createObjectURL(blob)
+      const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+        method: 'POST',
+        headers: new Headers({ 'Authorization': 'Bearer ' + accessToken }),
+        body: form,
+      });
+      const data = await res.json();
+      document.getElementById('driveMsg').innerHTML = `<span style="color:#2ecc71;">Backup saved to Google Drive successfully! (File ID: ${data.id})</span>`;
+    } catch(err) {
+      document.getElementById('driveMsg').innerHTML = `<span style="color:#e74c3c;">Error saving to Drive: ${err}</span>`;
+    }
+  }
+
+  async function loadFromGoogleDrive() {
+    if (!accessToken) { alert('Please connect Google Drive first.'); return; }
+    try {
+      const res = await fetch('https://www.googleapis.com/drive/v3/files?q=name=\'mastercore_music_backup.json\'', {
+        headers: new Headers({ 'Authorization': 'Bearer ' + accessToken }),
+      });
+      const data = await res.json();
+      if (data.files && data.files.length > 0) {
+        const fileId = data.files[0].id;
+        const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+          headers: new Headers({ 'Authorization': 'Bearer ' + accessToken }),
         });
-        renderAllViews();
-      };
-      mediaRecorder.start();
-      document.getElementById('recStatus').textContent = '🔴 Recording...';
-      document.getElementById('recStartBtn').disabled = true;
-      document.getElementById('recStopBtn').disabled = false;
-    } catch(err) { alert('Mic access error: ' + err); }
+        const content = await fileRes.json();
+        musicLibrary = content;
+        localStorage.setItem('master_music_lib', JSON.stringify(musicLibrary));
+        renderMusic();
+        document.getElementById('driveMsg').innerHTML = `<span style="color:#2ecc71;">Restored ${musicLibrary.length} tracks from Google Drive!</span>`;
+      } else {
+        document.getElementById('driveMsg').textContent = 'No backup file found in Google Drive.';
+      }
+    } catch(err) {
+      document.getElementById('driveMsg').innerHTML = `<span style="color:#e74c3c;">Error loading from Drive: ${err}</span>`;
+    }
   }
 
-  function stopMicRecording() {
-    mediaRecorder.stop();
-    document.getElementById('recStatus').textContent = 'Ready';
-    document.getElementById('recStartBtn').disabled = false;
-    document.getElementById('recStopBtn').disabled = true;
-  }
-
-  // Backup / Restore JSON Metadata
-  function exportDataJSON() {
-    const exportObj = {
-      audio: mediaStore.audio.map(a => ({ title: a.title, size: a.size })),
-      video: mediaStore.video.map(v => ({ title: v.title, size: v.size }))
-    };
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportObj, null, 2));
-    const dl = document.createElement('a');
-    dl.setAttribute("href", dataStr);
-    dl.setAttribute("download", `mastercore_backup_${Date.now()}.json`);
-    dl.click();
-  }
-
-  function importDataJSON(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = e => {
-      try {
-        const data = JSON.parse(e.target.result);
-        alert('Index imported. Select local directory to bind media file binary playback.');
-      } catch(err) { alert('Invalid file'); }
-    };
-    reader.readAsText(file);
-  }
+  renderMusic();
 </script>
 </body>
 </html>
