@@ -1,9 +1,31 @@
 <!DOCTYPE html>
+<!--
+  Mastercore — Video Studio & Google Drive Sync (FIXED COPY)
+  Built from video-studio-as-received-2026-11-06.html (untouched).
+  What changed, and why:
+  1. PLAYBACK AFTER RELOAD — the original saved each clip's blob URL
+     (URL.createObjectURL) into localStorage. Blob URLs die when the tab
+     closes, so after a reload every saved clip pointed at a dead link and
+     Load did nothing. This copy saves title + size only, keeps the live
+     blob URL in memory, and relinks by name+size when you scan the folder
+     again. Clips that are not linked yet say so plainly ("Rescan folder
+     to relink" / "Needs rescan") instead of failing silently.
+  2. NO DUPLICATES ON RESCAN — scanning the same folder twice no longer
+     doubles the list; matching clips are relinked, new ones are added.
+  3. CLIENT ID IN ONE PLACE — the Google OAuth client ID is now a single
+     constant (GOOGLE_CLIENT_ID) at the top of the script. If it is still
+     the placeholder, Connect tells you so instead of failing quietly.
+  4. Titles are escaped when drawn, so a file name with < or & cannot
+     break the page.
+  Everything else (layout, styling, tabs, PiP, Drive save/restore shape)
+  is unchanged. Drive still backs up the catalog (titles + sizes) only —
+  the video files themselves stay on the phone/OTG drive.
+-->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Mastercore — Music Studio & Google Drive Sync</title>
+<title>Mastercore — Video Studio & Google Drive Sync</title>
 <style>
   * { box-sizing: border-box; }
   body {
@@ -25,6 +47,12 @@
   main { flex: 1; background: #0f0f0f; padding: 25px; overflow-y: auto; padding-bottom: 100px; }
   h1 { font-size: 1.6em; margin-top: 0; color: #fff; }
   .section-title { font-size: 1.15em; margin: 20px 0 10px 0; color: #fff; border-bottom: 1px solid #383838; padding-bottom: 6px; }
+
+  .video-workspace { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; align-items: start; }
+  @media(max-width: 900px) { .video-workspace { grid-template-columns: 1fr; } }
+  .video-stage-box { background: #000; border-radius: 12px; overflow: hidden; border: 1px solid #383838; }
+  video { width: 100%; aspect-ratio: 16/9; background: #000; outline: none; }
+  .video-meta-panel { background: #181818; padding: 15px; border-radius: 12px; border: 1px solid #282828; }
 
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 15px; }
   .card {
@@ -55,20 +83,6 @@
   .btn-blue { background: #4285f4; color: #fff; }
   .btn-blue:hover { background: #3367d6; }
 
-  .player-bar {
-    position: fixed; bottom: 0; left: 0; right: 0; height: 75px; background: #1a1a1a;
-    border-top: 1px solid #383838; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; z-index: 1000;
-  }
-  .player-info { display: flex; align-items: center; gap: 12px; width: 30%; }
-  .player-thumb { width: 45px; height: 45px; background: #333; border-radius: 6px; display: flex; align-items: center; justify-content: center; }
-  .player-meta .title { font-size: 0.85em; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .player-meta .sub { font-size: 0.75em; color: #aaa; }
-  .player-controls { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 40%; }
-  .control-btns { display: flex; align-items: center; gap: 15px; }
-  .control-btns button { background: transparent; color: #fff; font-size: 1.1em; padding: 5px; border-radius: 50%; margin: 0; }
-  .progress-container { display: flex; align-items: center; gap: 10px; width: 100%; font-size: 0.75em; color: #aaa; }
-  input[type="range"] { flex: 1; accent-color: #ff0000; cursor: pointer; }
-
   .view { display: none; }
   .view.active { display: block; }
   @media(max-width: 768px) { aside { display: none; } }
@@ -80,81 +94,87 @@
 
 <div class="app-container">
   <aside>
-    <h2>MUSIC STUDIO</h2>
-    <button class="nav-btn active" onclick="switchTab('homeTab', this)">🏠 Home Dashboard</button>
-    <button class="nav-btn" onclick="switchTab('libraryTab', this)">🎵 Music Library</button>
+    <h2>VIDEO STUDIO</h2>
+    <button class="nav-btn active" onclick="switchTab('homeTab', this)">🎬 Video Workspace</button>
+    <button class="nav-btn" onclick="switchTab('libraryTab', this)">📂 Video Library</button>
     <button class="nav-btn" onclick="switchTab('gdriveTab', this)">☁️ Google Drive Storage</button>
     <hr style="border-color:#383838; width:100%; margin:10px 0;">
-    <button class="nav-btn" onclick="window.location.href='video.html'" style="color:#ffb86b;">🎬 Video Studio ↗</button>
+    <button class="nav-btn" onclick="window.location.href='index.html'" style="color:#ffb86b;">🎵 Music Studio ↗</button>
   </aside>
 
   <main>
-    <!-- 1. HOME -->
+    <!-- 1. VIDEO WORKSPACE -->
     <div id="homeTab" class="view active">
-      <h1>Music Dashboard</h1>
+      <h1>Assigned Video Workspace</h1>
       <div style="background:#181818; padding:20px; border-radius:12px; margin-bottom:25px; border:1px solid #282828;">
-        <h3 style="margin-top:0; color:#fff;">📁 Scan Android Local / OTG Music Folder</h3>
-        <input type="file" webkitdirectory directory multiple accept="audio/*" onchange="scanMusicFolder(event)">
+        <h3 style="margin-top:0; color:#fff;">📁 Scan Android Local / OTG Video Folder</h3>
+        <input type="file" webkitdirectory directory multiple accept="video/*" onchange="scanVideoFolder(event)">
       </div>
-      <div class="section-title">Quick Picks</div>
-      <div class="grid" id="homeMusicGrid"></div>
+
+      <div class="video-workspace">
+        <div class="video-stage-box">
+          <video id="assignedStageVideo" controls></video>
+        </div>
+        <div class="video-meta-panel">
+          <div id="assignedTitle" style="font-weight:bold; font-size:1.1em; margin-bottom:8px;">No Video Loaded</div>
+          <div id="assignedSize" style="color:#aaa; font-size:0.85em; margin-bottom:15px;">Select a video clip below.</div>
+          <button class="btn-red" onclick="togglePiP()">🗔 Pop Out / PiP Mode</button>
+        </div>
+      </div>
+
+      <div class="section-title" style="margin-top:25px;">Video Library</div>
+      <div class="grid" id="homeVideoGrid"></div>
     </div>
 
     <!-- 2. LIBRARY -->
     <div id="libraryTab" class="view">
-      <h1>Music Library Index</h1>
+      <h1>Video Library Index</h1>
       <table>
         <thead><tr><th>#</th><th>Title</th><th>Size</th><th>Action</th></tr></thead>
-        <tbody id="audioTableBody"></tbody>
+        <tbody id="videoTableBody"></tbody>
       </table>
     </div>
 
     <!-- 3. GOOGLE DRIVE STORAGE -->
     <div id="gdriveTab" class="view">
-      <h1>Google Drive Storage & Cloud Backup</h1>
-      <p style="color:#aaa;">Connect your Google account to back up and sync your music library metadata and playlist indexes directly to Google Drive.</p>
+      <h1>Google Drive Cloud Sync</h1>
+      <p style="color:#aaa;">Connect your Google account to back up and restore your video library catalog and metadata across devices.</p>
       
       <div style="background:#181818; padding:20px; border-radius:12px; border:1px solid #282828; margin-top:20px;">
         <div id="authStatus" style="font-weight:bold; margin-bottom:15px; color:#ffb86b;">Status: Not Connected to Google Drive</div>
         <button class="btn-blue" onclick="handleAuthClick()">Connect Google Drive</button>
-        <button class="btn-red" onclick="saveToGoogleDrive()" id="saveDriveBtn" disabled>☁️ Save Backup to Google Drive</button>
-        <button onclick="loadFromGoogleDrive()" id="loadDriveBtn" disabled>📥 Restore Backup from Google Drive</button>
+        <button class="btn-red" onclick="saveToGoogleDrive()" id="saveDriveBtn" disabled>☁️ Save Catalog to Google Drive</button>
+        <button onclick="loadFromGoogleDrive()" id="loadDriveBtn" disabled>📥 Restore Catalog from Google Drive</button>
         <div id="driveMsg" style="margin-top:15px; font-size:0.9em;"></div>
       </div>
     </div>
   </main>
 </div>
 
-<!-- Player Bar -->
-<div class="player-bar">
-  <div class="player-info">
-    <div class="player-thumb">🎵</div>
-    <div class="player-meta">
-      <div class="title" id="barTitle">No Audio Selected</div>
-      <div class="sub" id="barSub">Mastercore Studio</div>
-    </div>
-  </div>
-  <div class="player-controls">
-    <div class="control-btns">
-      <button onclick="playPrev()">⏮</button>
-      <button id="playBtn" onclick="togglePlay()">▶</button>
-      <button onclick="playNext()">⏭</button>
-    </div>
-    <div class="progress-container">
-      <span id="currentTime">0:00</span>
-      <input type="range" id="seekBar" value="0" max="100" oninput="seekAudio(this.value)">
-      <span id="duration">0:00</span>
-    </div>
-  </div>
-  <div style="width: 30%;"></div>
-</div>
-
-<audio id="audioEngine" ontimeupdate="updateProgress()" onended="playNext()"></audio>
-
 <script>
-  let musicLibrary = JSON.parse(localStorage.getItem('master_music_lib')) || [];
-  let currentAudioIndex = -1;
+  // ---- SETUP: paste your Google Cloud OAuth Client ID here ----
+  // Google Cloud Console > APIs & Services > Credentials > OAuth client ID
+  // (web application). Add this page's address to its Authorized JavaScript
+  // origins. A client ID is a public identifier, not a secret — but keep
+  // the page on an origin you control.
+  const GOOGLE_CLIENT_ID = 'YOUR_CLIENT_ID.apps.googleusercontent.com';
+
+  const LIB_KEY = 'master_video_lib';
+  let videoLibrary = [];
+  try { videoLibrary = JSON.parse(localStorage.getItem(LIB_KEY)) || []; } catch (e) { videoLibrary = []; }
+  // Saved entries carry title + size only. A live play link (blob URL) only
+  // exists while the page is open, so it lives in memory as v._url and is
+  // never saved. Old entries that still carry a saved url are cleaned here.
+  videoLibrary = videoLibrary.map(v => ({ title: v.title, size: v.size }));
   let accessToken = null;
+
+  function saveLibrary() {
+    localStorage.setItem(LIB_KEY, JSON.stringify(videoLibrary.map(v => ({ title: v.title, size: v.size }))));
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
 
   function switchTab(tabId, btn) {
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
@@ -163,84 +183,79 @@
     btn.classList.add('active');
   }
 
-  function scanMusicFolder(event) {
+  function scanVideoFolder(event) {
     const files = event.target.files;
+    let added = 0, relinked = 0;
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      if (file.type.startsWith('audio/') || file.name.match(/\.(mp3|wav|m4a|aac)$/i)) {
-        musicLibrary.push({
-          title: file.name.replace(/\.[^/.]+$/, ""),
-          size: (file.size / (1024*1024)).toFixed(1) + ' MB',
-          url: URL.createObjectURL(file)
-        });
+      if (!(file.type.startsWith('video/') || file.name.match(/\.(mp4|webm|mkv|mov)$/i))) continue;
+      const title = file.name.replace(/\.[^/.]+$/, "");
+      const size = (file.size / (1024*1024)).toFixed(1) + ' MB';
+      const existing = videoLibrary.find(v => v.title === title && v.size === size);
+      if (existing) {
+        existing._url = URL.createObjectURL(file);
+        relinked++;
+      } else {
+        videoLibrary.push({ title, size, _url: URL.createObjectURL(file) });
+        added++;
       }
     }
-    localStorage.setItem('master_music_lib', JSON.stringify(musicLibrary));
-    renderMusic();
-    alert(`Indexed ${musicLibrary.length} music tracks!`);
+    saveLibrary();
+    renderVideos();
+    alert(`Indexed ${videoLibrary.length} video clips! (${added} new, ${relinked} relinked)`);
+    event.target.value = ''; // let the same folder be picked again
   }
 
-  function renderMusic() {
-    const grid = document.getElementById('homeMusicGrid');
-    grid.innerHTML = musicLibrary.length ? '' : '<p style="color:#aaa;">No music scanned yet.</p>';
-    musicLibrary.forEach((m, idx) => {
-      grid.innerHTML += `<div class="card" onclick="playTrack(${idx})"><div class="card-thumb">🎵</div><div class="card-title">${m.title}</div></div>`;
+  function renderVideos() {
+    const grid = document.getElementById('homeVideoGrid');
+    grid.innerHTML = videoLibrary.length ? '' : '<p style="color:#aaa;">No videos scanned yet.</p>';
+    videoLibrary.forEach((v, idx) => {
+      const badge = v._url ? '' : '<div style="color:#ffb86b; font-size:0.8em; margin-top:4px;">Rescan folder to relink</div>';
+      grid.innerHTML += `<div class="card" onclick="loadVideo(${idx})"><div class="card-thumb">🎬</div><div class="card-title">${escapeHtml(v.title)}</div>${badge}</div>`;
     });
 
-    const tbody = document.getElementById('audioTableBody');
+    const tbody = document.getElementById('videoTableBody');
     tbody.innerHTML = '';
-    musicLibrary.forEach((m, idx) => {
-      tbody.innerHTML += `<tr><td>${idx+1}</td><td><b>${m.title}</b></td><td>${m.size}</td><td><button onclick="playTrack(${idx})">Play</button></td></tr>`;
+    videoLibrary.forEach((v, idx) => {
+      const action = v._url
+        ? `<button class="btn-red" onclick="loadVideo(${idx})">Load</button>`
+        : `<span style="color:#ffb86b; font-size:0.85em;">Needs rescan</span>`;
+      tbody.innerHTML += `<tr><td>${idx+1}</td><td><b>${escapeHtml(v.title)}</b></td><td>${escapeHtml(v.size)}</td><td>${action}</td></tr>`;
     });
   }
 
-  const audioEngine = document.getElementById('audioEngine');
-  function playTrack(idx) {
-    currentAudioIndex = idx;
-    const t = musicLibrary[idx];
-    audioEngine.src = t.url;
-    audioEngine.play();
-    document.getElementById('barTitle').textContent = t.title;
-    document.getElementById('barSub').textContent = t.size;
-    document.getElementById('playBtn').textContent = '⏸';
+  function loadVideo(idx) {
+    const v = videoLibrary[idx];
+    if (!v || !v._url) {
+      alert('This clip is not linked yet. Scan the video folder again and it will relink by name and size.');
+      return;
+    }
+    const stage = document.getElementById('assignedStageVideo');
+    stage.src = v._url;
+    stage.play();
+    document.getElementById('assignedTitle').textContent = v.title;
+    document.getElementById('assignedSize').textContent = v.size;
   }
 
-  function togglePlay() {
-    if (currentAudioIndex === -1 && musicLibrary.length) { playTrack(0); return; }
-    if (audioEngine.paused) { audioEngine.play(); document.getElementById('playBtn').textContent = '⏸'; }
-    else { audioEngine.pause(); document.getElementById('playBtn').textContent = '▶'; }
+  async function togglePiP() {
+    const stage = document.getElementById('assignedStageVideo');
+    try {
+      if (document.pictureInPictureElement) {
+        await document.exitPictureInPicture();
+      } else if (document.pictureInPictureEnabled) {
+        await stage.requestPictureInPicture();
+      }
+    } catch(err) { console.log('PiP error:', err); }
   }
 
-  function playNext() {
-    if (!musicLibrary.length) return;
-    currentAudioIndex = (currentAudioIndex + 1) % musicLibrary.length;
-    playTrack(currentAudioIndex);
-  }
-  function playPrev() {
-    if (!musicLibrary.length) return;
-    currentAudioIndex = (currentAudioIndex - 1 + musicLibrary.length) % musicLibrary.length;
-    playTrack(currentAudioIndex);
-  }
-
-  function updateProgress() {
-    if (!audioEngine.duration) return;
-    document.getElementById('seekBar').value = (audioEngine.currentTime / audioEngine.duration) * 100;
-    document.getElementById('currentTime').textContent = formatTime(audioEngine.currentTime);
-    document.getElementById('duration').textContent = formatTime(audioEngine.duration);
-  }
-  function seekAudio(val) {
-    if (audioEngine.duration) audioEngine.currentTime = (val / 100) * audioEngine.duration;
-  }
-  function formatTime(sec) {
-    let m = Math.floor(sec / 60), s = Math.floor(sec % 60);
-    return `${m}:${s < 10 ? '0' : ''}${s}`;
-  }
-
-  // Google Drive Integration via Google Identity Services
+  // Google Drive Integration
   function handleAuthClick() {
-    // Note: Replace with your actual Google Cloud Console OAuth Client ID for full integration
+    if (!GOOGLE_CLIENT_ID || GOOGLE_CLIENT_ID.indexOf('YOUR_CLIENT_ID') === 0) {
+      document.getElementById('driveMsg').innerHTML = '<span style="color:#e74c3c;">Paste your Google Cloud OAuth Client ID into GOOGLE_CLIENT_ID at the top of the script first.</span>';
+      return;
+    }
     const client = google.accounts.oauth2.initTokenClient({
-      client_id: 'YOUR_CLIENT_ID.apps.googleusercontent.com', // User can insert their Google Cloud Client ID
+      client_id: GOOGLE_CLIENT_ID,
       scope: 'https://www.googleapis.com/auth/drive.file',
       callback: (response) => {
         if (response.access_token) {
@@ -258,8 +273,8 @@
 
   async function saveToGoogleDrive() {
     if (!accessToken) { alert('Please connect Google Drive first.'); return; }
-    const metadata = { name: 'mastercore_music_backup.json', mimeType: 'application/json' };
-    const fileContent = JSON.stringify(musicLibrary.map(m => ({ title: m.title, size: m.size })));
+    const metadata = { name: 'mastercore_video_backup.json', mimeType: 'application/json' };
+    const fileContent = JSON.stringify(videoLibrary.map(v => ({ title: v.title, size: v.size })));
     
     const form = new FormData();
     form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
@@ -272,7 +287,7 @@
         body: form,
       });
       const data = await res.json();
-      document.getElementById('driveMsg').innerHTML = `<span style="color:#2ecc71;">Backup saved to Google Drive successfully! (File ID: ${data.id})</span>`;
+      document.getElementById('driveMsg').innerHTML = `<span style="color:#2ecc71;">Video catalog saved to Google Drive! (File ID: ${data.id})</span>`;
     } catch(err) {
       document.getElementById('driveMsg').innerHTML = `<span style="color:#e74c3c;">Error saving to Drive: ${err}</span>`;
     }
@@ -281,7 +296,7 @@
   async function loadFromGoogleDrive() {
     if (!accessToken) { alert('Please connect Google Drive first.'); return; }
     try {
-      const res = await fetch('https://www.googleapis.com/drive/v3/files?q=name=\'mastercore_music_backup.json\'', {
+      const res = await fetch('https://www.googleapis.com/drive/v3/files?q=name=\'mastercore_video_backup.json\'', {
         headers: new Headers({ 'Authorization': 'Bearer ' + accessToken }),
       });
       const data = await res.json();
@@ -291,19 +306,19 @@
           headers: new Headers({ 'Authorization': 'Bearer ' + accessToken }),
         });
         const content = await fileRes.json();
-        musicLibrary = content;
-        localStorage.setItem('master_music_lib', JSON.stringify(musicLibrary));
-        renderMusic();
-        document.getElementById('driveMsg').innerHTML = `<span style="color:#2ecc71;">Restored ${musicLibrary.length} tracks from Google Drive!</span>`;
+        videoLibrary = (Array.isArray(content) ? content : []).map(v => ({ title: v.title, size: v.size }));
+        saveLibrary();
+        renderVideos();
+        document.getElementById('driveMsg').innerHTML = `<span style="color:#2ecc71;">Restored ${videoLibrary.length} videos from Google Drive! Scan the folder once to relink them for playback.</span>`;
       } else {
-        document.getElementById('driveMsg').textContent = 'No backup file found in Google Drive.';
+        document.getElementById('driveMsg').textContent = 'No video backup found in Google Drive.';
       }
     } catch(err) {
       document.getElementById('driveMsg').innerHTML = `<span style="color:#e74c3c;">Error loading from Drive: ${err}</span>`;
     }
   }
 
-  renderMusic();
+  renderVideos();
 </script>
 </body>
 </html>
