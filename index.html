@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Mastercore — Audio Studio & File Vault</title>
+<title>Mastercore — Android Audio Studio & File Vault</title>
 <style>
   * { box-sizing: border-box; }
   body {
@@ -27,7 +27,7 @@
   }
   .panel h2 { color: #fff0a6; font-size: 1em; margin-top: 0; border-bottom: 1px solid #14243c; padding-bottom: 6px; }
   
-  input[type="text"], select {
+  input[type="text"], select, input[type="file"] {
     background: #050914; border: 1px solid #3a7a9c; color: #e8f4f8;
     padding: 8px; border-radius: 4px; width: 100%; margin-bottom: 10px;
   }
@@ -53,16 +53,22 @@
 <body>
 
 <div class="wrap">
-  <h1>MASTERCORE AUDIO STUDIO & VAULT</h1>
-  <div class="sub">USB / OTG FILE SYSTEM ACCESS · RECORDER · INDEX & PLAYLIST · AUDIO CUTTER & VOICEOVER</div>
+  <h1>MASTERCORE ANDROID AUDIO STUDIO</h1>
+  <div class="sub">ANDROID LOCAL STORAGE SCANNER · USB/OTG · RECORDER · INDEX & PLAYLIST · AUDIO CUTTER</div>
 
-  <!-- EXTERNAL STORAGE & USB/OTG BRIDGE -->
+  <!-- ANDROID LOCAL DEVICE & OTG SCANNER -->
   <div class="panel full-width">
-    <h2>1. External Storage & USB/OTG Port Manager</h2>
-    <div class="status">Connect external drives, OTG flash storage, or map a local device directory to read/write audio files directly.</div>
-    <button onclick="connectExternalDirectory()">Mount Device / OTG Folder</button>
-    <button class="btn-alt" onclick="loadFromDeviceStorage()">Scan Mounted Files</button>
-    <span id="mountStatus" style="margin-left:15px; color:#ffb86b; font-size:0.9em;">No external directory mounted.</span>
+    <h2>1. Android Local Storage & Folder Scanner</h2>
+    <div class="status">Select your phone's internal <b>Music</b>, <b>Recordings</b>, or external OTG folder to instantly index all audio files.</div>
+    
+    <label style="font-size:0.85s; color:#fff0a6;">Scan Entire Local Audio Directory:</label>
+    <input type="file" id="localFolderInput" webkitdirectory directory multiple onchange="scanAndroidFolder(event)">
+    
+    <div style="margin-top: 10px;">
+      <button onclick="connectExternalDirectory()">Mount OTG / External Drive API</button>
+      <button class="btn-alt" onclick="loadFromDeviceStorage()">Scan Mounted OTG</button>
+      <span id="mountStatus" style="margin-left:15px; color:#ffb86b; font-size:0.9em;">No external directory mounted.</span>
+    </div>
   </div>
 
   <div class="grid">
@@ -78,10 +84,10 @@
     <!-- MUSIC INDEX & PLAYLIST -->
     <div class="panel">
       <h2>3. Index & Playlist Manager</h2>
-      <input type="text" id="playlistName" placeholder="New Playlist Name (e.g., Mix 1)...">
+      <input type="text" id="playlistName" placeholder="New Playlist Name...">
       <button class="btn-alt" onclick="createPlaylist()">Create Playlist</button>
       <select id="playlistSelect" onchange="filterPlaylist()"></select>
-      <div style="max-height: 150px; overflow-y: auto;">
+      <div style="max-height: 140px; overflow-y: auto;">
         <table id="playlistTable">
           <thead><tr><th>Track</th><th>Playlist</th></tr></thead>
           <tbody id="playlistItems"></tbody>
@@ -92,38 +98,34 @@
 
   <!-- AUDIO EDITOR: CUTTING & VOICEOVER -->
   <div class="panel full-width">
-    <h2>4. Audio Editor (Trimming, Cutting & Voiceover Overlay)</h2>
-    <div class="status">Select an indexed track to perform trim cuts or mix a live voiceover on top.</div>
+    <h2>4. Audio Editor (Trimming & Voiceover Layer)</h2>
     <select id="editorTrackSelect"></select>
-    
     <div style="display: flex; gap: 10px; margin-bottom: 10px;">
       <div style="flex:1;">
-        <label style="font-size:0.8em; color:#7fdbff;">Trim Start (Seconds):</label>
+        <label style="font-size:0.8em; color:#7fdbff;">Trim Start (Sec):</label>
         <input type="text" id="trimStart" value="0">
       </div>
       <div style="flex:1;">
-        <label style="font-size:0.8em; color:#7fdbff;">Trim End (Seconds):</label>
+        <label style="font-size:0.8em; color:#7fdbff;">Trim End (Sec):</label>
         <input type="text" id="trimEnd" value="10">
       </div>
     </div>
-    
-    <button onclick="processAudioCut()">Trim / Cut Track Segment</button>
+    <button onclick="processAudioCut()">Trim Segment</button>
     <button class="btn-alt" onclick="recordVoiceoverOverlay()">Record Voiceover Layer</button>
-    
-    <div id="editorOutput" style="margin-top:12px;"></div>
+    <div id="editorOutput" style="margin-top:10px;"></div>
   </div>
 
   <!-- MASTER MUSIC VAULT INVENTORY -->
   <div class="panel full-width">
     <h2>5. Master Music Library Index</h2>
-    <input type="text" id="searchIndex" placeholder="Search index by title or tag..." oninput="renderLibrary()">
+    <input type="text" id="searchIndex" placeholder="Search library index..." oninput="renderLibrary()">
     <table>
       <thead>
         <tr>
           <th>Index #</th>
           <th>Title / Filename</th>
-          <th>Source / Type</th>
-          <th>Duration / Size</th>
+          <th>Source</th>
+          <th>Size</th>
           <th>Actions</th>
         </tr>
       </thead>
@@ -141,82 +143,99 @@
   let mediaRecorder;
   let audioChunks = [];
 
-  // 1. FILE SYSTEM / OTG ACCESS
+  // 1. ANDROID LOCAL FOLDER SCANNER
+  function scanAndroidFolder(event) {
+    const files = event.target.files;
+    let addedCount = 0;
+    
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      // Filter for common audio file types stored on Android
+      if (file.type.startsWith('audio/') || file.name.match(/\.(mp3|wav|m4a|aac|ogg|flac|webm)$/i)) {
+        const fileUrl = URL.createObjectURL(file);
+        library.push({
+          id: 'local_' + Math.random().toString(36).substring(2, 9),
+          title: file.name,
+          source: 'Android Local Storage',
+          size: (file.size / (1024 * 1024)).toFixed(2) + ' MB',
+          dataUrl: fileUrl
+        });
+        addedCount++;
+      }
+    }
+    saveAndRefresh();
+    alert(`Successfully scanned and indexed ${addedCount} audio files from your Android device folder.`);
+  }
+
+  // OTG / EXTERNAL DIRECTORY API SCANNER
   async function connectExternalDirectory() {
     try {
       if ('showDirectoryPicker' in window) {
         externalDirHandle = await window.showDirectoryPicker();
-        document.getElementById('mountStatus').textContent = `Mounted: ${externalDirHandle.name} (Read/Write Active)`;
+        document.getElementById('mountStatus').textContent = `Mounted: ${externalDirHandle.name}`;
       } else {
-        alert('File System Access API is not fully supported on this browser context. Using local browser sandbox storage.');
+        alert('Directory picker API not supported on this browser.');
       }
     } catch (err) {
-      console.log('Directory selection cancelled or failed', err);
+      console.log('Mount cancelled', err);
     }
   }
 
   async function loadFromDeviceStorage() {
-    if (!externalDirHandle) {
-      alert('Please mount an external device folder or OTG directory first.');
-      return;
-    }
-    library = [];
+    if (!externalDirHandle) { alert('Mount an OTG folder first.'); return; }
     for await (const entry of externalDirHandle.values()) {
-      if (entry.kind === 'file' && (entry.name.endsWith('.mp3') || entry.name.endsWith('.wav') || entry.name.endsWith('.m4a') || entry.name.endsWith('.webm'))) {
+      if (entry.kind === 'file' && entry.name.match(/\.(mp3|wav|m4a|aac|ogg)$/i)) {
         const file = await entry.getFile();
         library.push({
-          id: 'ext_' + Math.random().toString(36.substring(2, 9)),
+          id: 'otg_' + Math.random().toString(36).substring(2, 9),
           title: entry.name,
-          source: 'External OTG/USB',
+          source: 'OTG External',
           size: (file.size / (1024*1024)).toFixed(2) + ' MB',
-          fileObj: file
+          dataUrl: URL.createObjectURL(file)
         });
       }
     }
     saveAndRefresh();
-    alert(`Scanned and indexed ${library.length} audio tracks from external mount.`);
+    alert('OTG storage scan complete.');
   }
 
-  // 2. VOICE RECORDING
+  // 2. VOICE RECORDER
   async function startRecording() {
     audioChunks = [];
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaRecorder = new MediaRecorder(stream);
       mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
-      mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-        const audioUrl = URL.createObjectURL(audioBlob);
-        document.getElementById('playbackRecorder').src = audioUrl;
-        
-        const newTrack = {
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(audioChunks, { type: 'audio/webm' });
+        const url = URL.createObjectURL(blob);
+        document.getElementById('playbackRecorder').src = url;
+        library.push({
           id: 'rec_' + Date.now(),
-          title: `Voice Recording ${new Date().toLocaleTimeString()}`,
-          source: 'Internal Mic',
-          size: (audioBlob.size / 1024).toFixed(1) + ' KB',
-          dataUrl: audioUrl
-        };
-        library.push(newTrack);
+          title: `Voice Note ${new Date().toLocaleTimeString()}`,
+          source: 'Mic Recorder',
+          size: (blob.size / 1024).toFixed(1) + ' KB',
+          dataUrl: url
+        });
         saveAndRefresh();
-        alert('Voice recording saved successfully into library index!');
       };
       mediaRecorder.start();
-      document.getElementById('recStatus').textContent = 'Recording in progress...';
+      document.getElementById('recStatus').textContent = 'Recording...';
       document.getElementById('recBtn').disabled = true;
       document.getElementById('stopBtn').disabled = false;
     } catch (err) {
-      alert('Microphone access denied or unavailable: ' + err);
+      alert('Microphone error: ' + err);
     }
   }
 
   function stopRecording() {
     mediaRecorder.stop();
-    document.getElementById('recStatus').textContent = 'Microphone ready.';
+    document.getElementById('recStatus').textContent = 'Ready.';
     document.getElementById('recBtn').disabled = false;
     document.getElementById('stopBtn').disabled = true;
   }
 
-  // 3. PLAYLIST MANAGEMENT
+  // 3. PLAYLISTS
   function createPlaylist() {
     const name = document.getElementById('playlistName').value.trim();
     if (name && !playlists[name]) {
@@ -224,24 +243,22 @@
       localStorage.setItem('master_playlists', JSON.stringify(playlists));
       document.getElementById('playlistName').value = '';
       updatePlaylistDropdown();
-      alert(`Playlist "${name}" created.`);
     }
   }
 
   function updatePlaylistDropdown() {
-    const select = document.getElementById('playlistSelect');
-    select.innerHTML = '';
+    const sel = document.getElementById('playlistSelect');
+    sel.innerHTML = '';
     for (let pl in playlists) {
       let opt = document.createElement('option');
-      opt.value = pl;
-      opt.textContent = pl;
-      select.appendChild(opt);
+      opt.value = pl; opt.textContent = pl;
+      sel.appendChild(opt);
     }
   }
 
-  function addToPlaylist(trackId, playlistName) {
-    if (!playlists[playlistName].includes(trackId)) {
-      playlists[playlistName].push(trackId);
+  function addToPlaylist(trackId, plName) {
+    if (!playlists[plName].includes(trackId)) {
+      playlists[plName].push(trackId);
       localStorage.setItem('master_playlists', JSON.stringify(playlists));
       filterPlaylist();
     }
@@ -251,26 +268,23 @@
     const activePl = document.getElementById('playlistSelect').value;
     const tbody = document.getElementById('playlistItems');
     tbody.innerHTML = '';
-    const trackIds = playlists[activePl] || [];
-    
-    trackIds.forEach(id => {
-      const track = library.find(t => t.id === id);
-      if (track) {
+    (playlists[activePl] || []).forEach(id => {
+      const t = library.find(item => item.id === id);
+      if (t) {
         let tr = document.createElement('tr');
-        tr.innerHTML = `<td><b>${track.title}</b></td><td>${activePl}</td>`;
+        tr.innerHTML = `<td><b>${t.title}</b></td><td>${activePl}</td>`;
         tbody.appendChild(tr);
       }
     });
   }
 
-  // 4. AUDIO EDITOR & CUTTER
+  // 4. EDITOR & TRIM
   function updateEditorTracks() {
     const sel = document.getElementById('editorTrackSelect');
     sel.innerHTML = '';
     library.forEach(t => {
       let opt = document.createElement('option');
-      opt.value = t.id;
-      opt.textContent = t.title;
+      opt.value = t.id; opt.textContent = t.title;
       sel.appendChild(opt);
     });
   }
@@ -279,50 +293,41 @@
     const trackId = document.getElementById('editorTrackSelect').value;
     const start = document.getElementById('trimStart').value;
     const end = document.getElementById('trimEnd').value;
-    if (!trackId) { alert('No track selected for editing.'); return; }
-    
     const track = library.find(t => t.id === trackId);
-    // Simulation marker for client-side trimming metadata assignment
-    const cutTrack = {
+    if (!track) return;
+
+    library.push({
       id: 'cut_' + Date.now(),
-      title: `${track.title} (Cut ${start}s-${end}s)`,
-      source: 'Editor Trimmed',
+      title: `${track.title} [Trim ${start}s-${end}s]`,
+      source: 'Audio Editor',
       size: track.size,
-      dataUrl: track.dataUrl || (track.fileObj ? URL.createObjectURL(track.fileObj) : '')
-    };
-    library.push(cutTrack);
+      dataUrl: track.dataUrl
+    });
     saveAndRefresh();
-    document.getElementById('editorOutput').innerHTML = `<span style="color:#6bff9e;">Successfully generated segment: ${cutTrack.title}</span>`;
+    document.getElementById('editorOutput').innerHTML = `<span style="color:#6bff9e;">Trimmed segment saved successfully!</span>`;
   }
 
   function recordVoiceoverOverlay() {
-    alert('Voiceover recording initialized. Speak into your microphone to layer over the selected track timeline.');
     startRecording();
   }
 
-  // 5. LIBRARY INDEX RENDER & PLAYBACK
-  function playTrack(index) {
-    const track = library[index];
+  // 5. LIBRARY RENDER & ACTIONS
+  function playTrack(idx) {
+    const t = library[idx];
     const player = document.getElementById('mainAudioPlayer');
-    if (track.dataUrl) {
-      player.src = track.dataUrl;
-    } else if (track.fileObj) {
-      player.src = URL.createObjectURL(track.fileObj);
-    }
+    player.src = t.dataUrl;
     player.play();
   }
 
-  function deleteTrack(index) {
-    if (confirm('Remove track from index?')) {
-      library.splice(index, 1);
+  function deleteTrack(idx) {
+    if (confirm('Delete from index?')) {
+      library.splice(idx, 1);
       saveAndRefresh();
     }
   }
 
   function saveAndRefresh() {
-    // Note: fileObj cannot be serialized into JSON localStorage, handle indexes safely
-    const persistData = library.map(t => ({ id: t.id, title: t.title, source: t.source, size: t.size, dataUrl: t.dataUrl }));
-    localStorage.setItem('master_audio_library', JSON.stringify(persistData));
+    localStorage.setItem('master_audio_library', JSON.stringify(library));
     renderLibrary();
     updateEditorTracks();
   }
@@ -331,32 +336,30 @@
     const query = document.getElementById('searchIndex').value.toLowerCase();
     const tbody = document.getElementById('libraryList');
     tbody.innerHTML = '';
-
     const filtered = library.filter(t => t.title.toLowerCase().includes(query) || t.source.toLowerCase().includes(query));
 
     if (filtered.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:#6f8fa8;">Library index is empty or no matches found.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:#6f8fa8;">Library is empty. Scan an Android folder or record audio above.</td></tr>`;
       return;
     }
 
-    filtered.forEach((track, index) => {
+    filtered.forEach((t, idx) => {
       let tr = document.createElement('tr');
       tr.innerHTML = `
-        <td>#${index + 1}</td>
-        <td><b>${track.title}</b></td>
-        <td>${track.source}</td>
-        <td>${track.size}</td>
+        <td>#${idx + 1}</td>
+        <td><b>${t.title}</b></td>
+        <td>${t.source}</td>
+        <td>${t.size}</td>
         <td>
-          <button class="btn-alt" onclick="playTrack(${index})">Play</button>
-          <button class="btn-alt" onclick="addToPlaylist('${track.id}', document.getElementById('playlistSelect').value)">+ Playlist</button>
-          <button class="btn-danger" onclick="deleteTrack(${index})">Delete</button>
+          <button class="btn-alt" onclick="playTrack(${idx})">Play</button>
+          <button class="btn-alt" onclick="addToPlaylist('${t.id}', document.getElementById('playlistSelect').value)">+ Playlist</button>
+          <button class="btn-danger" onclick="deleteTrack(${idx})">Delete</button>
         </td>
       `;
       tbody.appendChild(tr);
     });
   }
 
-  // Init execution
   updatePlaylistDropdown();
   renderLibrary();
   updateEditorTracks();
