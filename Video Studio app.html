@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<!--
+  Mastercore — Video Studio (YouTube-style app)
+  Rebuilt 2026-11-07 from video-studio.html (the fixed copy, untouched).
+  Same function, new layout: smooth-scrolling home feed of video cards,
+  tap a card to play, bottom navigation (Home / Library / Drive), and a
+  mini-player that pins above the bottom bar while a video plays.
+
+  KEPT from the fixed copy:
+  - Folder scan via webkitdirectory; catalog in localStorage under
+    master_video_lib, title + size only; live blob URLs in memory only,
+    relinked by name+size on rescan; unlinked clips say "Rescan folder
+    to relink" / "Needs rescan"; rescan never duplicates the list.
+  - Stage player with native controls + Pop Out / PiP button.
+  - Google Drive backup/restore of mastercore_video_backup.json via
+    Google Identity Services, drive.file scope, same client ID, same
+    guard message if the ID were missing.
+  - "Music Studio" link to index.html in the same folder (in the header).
+  - Titles escaped when drawn into the page.
+  NEW in this file:
+  - Thumbnails: a frame is captured from the local file with a canvas
+    when it is scanned (memory only, never saved); a film-slate
+    placeholder shows if capture fails. Duration is read the same way.
+  - Header hides on scroll down, returns on scroll up (like YouTube).
+  - Mini-player: leave the player screen while a video plays and a
+    compact bar pins above the bottom nav (title, play/pause, close).
+    Tapping it reopens the player; closing it stops the video.
+  - Smooth scrolling: native momentum scrolling on the feed, CSS
+    containment on cards so a long list does not jank.
+  The only external load is the Google Identity Services SDK, which
+  Drive sign-in requires. Everything else is inline in this file.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mastercore — Video Studio & Google Drive Sync</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #0f0f0f; color: #f1f1f1;
+    height: 100dvh; display: flex; flex-direction: column; overflow: hidden;
+  }
+
+  /* ---- Header: hides on scroll down, returns on scroll up ---- */
+  header {
+    flex: 0 0 auto; height: 56px; background: #0f0f0f;
+    display: flex; align-items: center; gap: 8px; padding: 0 12px;
+    border-bottom: 1px solid #222;
+    margin-top: 0;
+    transition: margin-top .25s ease;
+    z-index: 30;
+  }
+  /* Negative margin pulls the main feed up to fill the space, so no
+     empty strip is left at the top while the header is hidden. */
+  body.header-hidden header { margin-top: -56px; }
+  header .logo { color: #ff0000; font-weight: 800; font-size: 1.05em; letter-spacing: .5px; white-space: nowrap; }
+  header .logo span { color: #fff; font-weight: 600; }
+  header .spacer { flex: 1; }
+  header .hdr-btn {
+    background: #4285f4; color: #fff; border: none; font-weight: bold;
+    padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: .85em; white-space: nowrap;
+  }
+  header .hdr-btn.connected { background: #2ecc71; }
+
+  /* ---- Tab strip: YouTube chip row under the header, sticky while the feed scrolls ---- */
+  #tabStrip {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; gap: 8px; flex-wrap: nowrap;
+    overflow-x: auto; overflow-y: hidden;
+    scrollbar-width: none; -ms-overflow-style: none;
+    background: #0f0f0f; padding: 10px 12px;
+    border-bottom: 1px solid #222;
+  }
+  #tabStrip::-webkit-scrollbar { display: none; }
+  .tab-chip {
+    flex: 0 1 auto; min-width: 0;
+    background: #272727; color: #f1f1f1; border: none;
+    font-size: .85em; font-weight: 600;
+    padding: 8px 14px; border-radius: 8px; cursor: pointer; margin: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .tab-chip:hover { background: #3f3f3f; }
+  /* The working tab expands to fill the free space (full label,
+     highlighted); inactive tabs shrink and scroll out of view when
+     there are more tabs than fit, so the working tab is always fully
+     visible and extra tabs never break the layout. */
+  .tab-chip.active {
+    flex: 1 0 auto; background: #f1f1f1; color: #0f0f0f;
+  }
+  body.on-player #tabStrip { display: none; }
+
+  /* ---- Main scroll area ---- */
+  main {
+    flex: 1 1 auto; overflow-y: auto; overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    scroll-behavior: smooth;
+    padding-bottom: 16px;
+  }
+  .view { display: none; }
+  .view.active { display: block; }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 0 12px; }
+  h1 { font-size: 1.25em; margin: 16px 0 10px 0; color: #fff; }
+
+  /* ---- Scan box ---- */
+  .scan-box {
+    background: #181818; padding: 16px; border-radius: 12px;
+    border: 1px solid #282828; margin: 12px 0 4px 0;
+  }
+  .scan-box h3 { margin: 0 0 8px 0; color: #fff; font-size: 1em; }
+  .scan-box p { margin: 0 0 10px 0; color: #aaa; font-size: .85em; }
+  input[type="file"] {
+    background: #121212; border: 1px solid #383838; color: #fff;
+    padding: 10px; border-radius: 8px; width: 100%;
+  }
+
+  /* ---- Home feed: one full-width card per clip, YouTube style ---- */
+  .feed { display: flex; flex-direction: column; gap: 20px; padding-top: 12px; }
+  .feed-card {
+    cursor: pointer; content-visibility: auto; contain-intrinsic-size: 320px;
+    contain: layout style;
+  }
+  .feed-thumb {
+    width: 100%; aspect-ratio: 16/9; background: #212121; border-radius: 12px;
+    overflow: hidden; position: relative; display: flex; align-items: center; justify-content: center;
+  }
+  .feed-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .feed-thumb .ph { font-size: 2.4em; color: #555; }
+  .feed-thumb .dur {
+    position: absolute; right: 8px; bottom: 8px; background: rgba(0,0,0,.8); color: #fff;
+    font-size: .75em; font-weight: 600; padding: 2px 6px; border-radius: 4px;
+  }
+  .feed-info { display: flex; gap: 10px; padding: 10px 2px 0 2px; }
+  .feed-avatar {
+    flex: 0 0 auto; width: 36px; height: 36px; border-radius: 50%;
+    background: #282828; display: flex; align-items: center; justify-content: center; font-size: 1.1em;
+  }
+  .feed-title { font-weight: 600; font-size: .95em; line-height: 1.35; word-break: break-word; }
+  .feed-meta { color: #aaa; font-size: .82em; margin-top: 3px; }
+  .feed-meta .relink { color: #ffb86b; }
+  .empty { color: #aaa; text-align: center; padding: 32px 0; }
+
+  /* ---- Player screen ---- */
+  .player-box { background: #000; margin: 0 -12px; }
+  .player-box video { width: 100%; aspect-ratio: 16/9; background: #000; outline: none; display: block; }
+  .player-title { font-weight: bold; font-size: 1.1em; margin: 14px 0 4px 0; word-break: break-word; }
+  .player-size { color: #aaa; font-size: .85em; margin-bottom: 14px; }
+  .back-btn {
+    background: transparent; border: 1px solid #383838; color: #fff;
+    padding: 8px 14px; border-radius: 20px; cursor: pointer; font-size: .9em; margin: 12px 0 0 0;
+  }
+
+  /* ---- Library table ---- */
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: .9em; }
+  th { text-align: left; color: #aaa; border-bottom: 1px solid #383838; padding: 10px 6px; }
+  td { padding: 10px 6px; border-bottom: 1px solid #222; vertical-align: middle; word-break: break-word; }
+
+  /* ---- Drive panel ---- */
+  .drive-box { background: #181818; padding: 20px; border-radius: 12px; border: 1px solid #282828; margin-top: 16px; }
+  .drive-box p { color: #aaa; }
+
+  button {
+    background: #fff; color: #000; border: none; font-weight: bold;
+    padding: 9px 16px; border-radius: 20px; cursor: pointer; margin-right: 6px; margin-bottom: 6px;
+  }
+  button:hover { background: #d3d3d3; }
+  button:disabled { opacity: .45; cursor: default; }
+  .btn-red { background: #ff0000; color: #fff; }
+  .btn-red:hover { background: #cc0000; }
+  .btn-blue { background: #4285f4; color: #fff; }
+  .btn-blue:hover { background: #3367d6; }
+
+  /* ---- Mini-player: pins above the bottom nav while a video plays ---- */
+  #miniPlayer {
+    flex: 0 0 auto; display: none; align-items: center; gap: 10px;
+    background: #212121; border-top: 1px solid #383838;
+    padding: 8px 12px; cursor: pointer; min-height: 56px;
+  }
+  #miniPlayer.show { display: flex; }
+  #miniPlayer .mini-thumb {
+    flex: 0 0 auto; width: 64px; aspect-ratio: 16/9; background: #181818; border-radius: 6px;
+    overflow: hidden; display: flex; align-items: center; justify-content: center; font-size: 1em; color: #777;
+  }
+  #miniPlayer .mini-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  #miniTitle {
+    flex: 1 1 auto; font-size: .9em; font-weight: 600;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+  }
+  #miniPlayer button {
+    flex: 0 0 auto; background: transparent; color: #fff; border: none;
+    font-size: 1.15em; padding: 8px; margin: 0; border-radius: 50%;
+  }
+  #miniPlayer button:hover { background: #383838; }
+
+  /* ---- Bottom navigation ---- */
+  nav {
+    flex: 0 0 auto; display: flex; background: #0f0f0f; border-top: 1px solid #222;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+  .nav-btn {
+    flex: 1; background: transparent; border: none; color: #aaa; cursor: pointer;
+    padding: 8px 0 10px 0; font-size: .72em; font-weight: 500; margin: 0; border-radius: 0;
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+  }
+  .nav-btn .ico { font-size: 1.5em; line-height: 1; }
+  .nav-btn:hover { background: transparent; color: #fff; }
+  .nav-btn.active { color: #fff; font-weight: 700; }
+</style>
+<!-- Google Identity Services SDK (needed for Drive sign-in) -->
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+
+<header id="appHeader">
+  <div class="logo">▶ <span>VIDEO STUDIO</span></div>
+  <div class="spacer"></div>
+  <button class="hdr-btn" id="hdrConnectBtn" onclick="handleAuthClick()">Connect Drive</button>
+</header>
+
+<main id="mainScroll">
+  <!-- Tab strip: chips are built from TABS in the script (see below).
+       Music Studio lives here as a tab, so it stays reachable. -->
+  <div id="tabStrip" role="tablist"></div>
+
+  <!-- HOME: smooth-scrolling feed -->
+  <div id="homeView" class="view active">
+    <div class="wrap">
+      <div class="scan-box">
+        <h3>📁 Scan Android Local / OTG Video Folder</h3>
+        <p>Pick the folder your videos are in. Clips are indexed by name and size, so scanning again relinks them — never duplicates them.</p>
+        <input type="file" webkitdirectory directory multiple accept="video/*" onchange="scanVideoFolder(event)">
+      </div>
+    </div>
+    <div class="wrap">
+      <div class="feed" id="homeFeed"></div>
+    </div>
+  </div>
+
+  <!-- PLAYER -->
+  <div id="playerView" class="view">
+    <button class="back-btn" onclick="goBackFromPlayer()">← Back</button>
+    <div class="player-box" style="margin-top:12px;">
+      <video id="assignedStageVideo" controls playsinline></video>
+    </div>
+    <div class="wrap">
+      <div class="player-title" id="assignedTitle">No Video Loaded</div>
+      <div class="player-size" id="assignedSize">Select a video clip below.</div>
+      <button class="btn-red" onclick="togglePiP()">🗔 Pop Out / PiP Mode</button>
+    </div>
+  </div>
+
+  <!-- LIBRARY -->
+  <div id="libraryView" class="view">
+    <div class="wrap">
+      <h1>Video Library Index</h1>
+      <table>
+        <thead><tr><th>#</th><th>Title</th><th>Size</th><th>Length</th><th>Action</th></tr></thead>
+        <tbody id="videoTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- DRIVE -->
+  <div id="driveView" class="view">
+    <div class="wrap">
+      <h1>Google Drive Cloud Sync</h1>
+      <p style="color:#aaa;">Connect your Google account to back up and restore your video library catalog and metadata across devices.</p>
+      <div class="drive-box">
+        <div id="authStatus" style="font-weight:bold; margin-bottom:15px; color:#ffb86b;">Status: Not Connected to Google Drive</div>
+        <button class="btn-blue" onclick="handleAuthClick()">Connect Google Drive</button>
+        <button class="btn-red" onclick="saveToGoogleDrive()" id="saveDriveBtn" disabled>☁️ Save Catalog to Google Drive</button>
+        <button onclick="loadFromGoogleDrive()" id="loadDriveBtn" disabled>📥 Restore Catalog from Google Drive</button>
+        <div id="driveMsg" style="margin-top:15px; font-size:0.9em;"></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- Mini-player -->
+<div id="miniPlayer" onclick="openPlayerFromMini(event)">
+  <div class="mini-thumb" id="miniThumb">🎬</div>
+  <div id="miniTitle"></div>
+  <button id="miniPlayBtn" onclick="toggleMiniPlay(event)" aria-label="Play or pause">⏸</button>
+  <button onclick="closeMiniPlayer(event)" aria-label="Close player">✕</button>
+</div>
+
+<!-- Bottom navigation: buttons are built from TABS in the script, so the
+     strip and the bar always stay in sync. -->
+<nav id="bottomNav"></nav>
+
+<script>
+  // ---- SETUP: paste your Google Cloud OAuth Client ID here ----
+  // Google Cloud Console > APIs & Services > Credentials > OAuth client ID
+  // (web application). Add this page's address to its Authorized JavaScript
+  // origins. A client ID is a public identifier, not a secret — but keep
+  // the page on an origin you control.
+  const GOOGLE_CLIENT_ID = '1062662969283-rq6ugqq0hjhusdjovsd7iefaflpo386c.apps.googleusercontent.com';
+
+  const LIB_KEY = 'master_video_lib';
+  let videoLibrary = [];
+  try { videoLibrary = JSON.parse(localStorage.getItem(LIB_KEY)) || []; } catch (e) { videoLibrary = []; }
+  // Saved entries carry title + size only. A live play link (blob URL) only
+  // exists while the page is open, so it lives in memory as v._url and is
+  // never saved. Old entries that still carry a saved url are cleaned here.
+  // v._thumb (captured frame) and v._duration live in memory only, too.
+  videoLibrary = videoLibrary.map(v => ({ title: v.title, size: v.size }));
+  let accessToken = null;
+  let currentIdx = -1;      // index of the clip in the stage player, or -1
+  let currentView = 'homeView';
+  let miniClosed = false;   // user closed the mini-player for this clip
+
+  function saveLibrary() {
+    localStorage.setItem(LIB_KEY, JSON.stringify(videoLibrary.map(v => ({ title: v.title, size: v.size }))));
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  function fmtDuration(sec) {
+    if (!sec || !isFinite(sec) || sec <= 0) return '';
+    sec = Math.round(sec);
+    const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+    return h > 0
+      ? h + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0')
+      : m + ':' + String(s).padStart(2, '0');
+  }
+
+  // ---- Tabs: ONE list drives the tab strip, the bottom nav, and panels ----
+  // Add a new tab with one line. Panel tabs: { id, label, icon, navLabel, navIcon }.
+  // Link tabs (open another page instead of a panel): { id, label, icon, href }.
+  // The strip, the bottom bar, and the panel switching all read from TABS,
+  // so they can never drift apart — built to scale.
+  const TABS = [
+    { id: 'homeView',    label: 'Video Workspace',      icon: '🎬', navLabel: 'Home',    navIcon: '🏠' },
+    { id: 'libraryView', label: 'Video Library',        icon: '📂', navLabel: 'Library', navIcon: '📂' },
+    { id: 'driveView',   label: 'Google Drive Storage', icon: '☁️', navLabel: 'Drive',   navIcon: '☁️' },
+    { id: 'musicStudio', label: 'Music Studio',         icon: '🎵', href: 'index.html' },
+  ];
+
+  function buildTabs() {
+    const strip = document.getElementById('tabStrip');
+    const nav = document.getElementById('bottomNav');
+    TABS.forEach(t => {
+      const chip = document.createElement('button');
+      chip.className = 'tab-chip';
+      chip.dataset.tab = t.id;
+      chip.textContent = (t.icon ? t.icon + ' ' : '') + t.label;
+      chip.setAttribute('role', 'tab');
+      if (t.href) {
+        chip.addEventListener('click', () => { window.location.href = t.href; });
+      } else {
+        chip.addEventListener('click', () => showView(t.id));
+      }
+      strip.appendChild(chip);
+      if (t.navLabel) {
+        const nb = document.createElement('button');
+        nb.className = 'nav-btn';
+        nb.dataset.tab = t.id;
+        nb.innerHTML = `<span class="ico">${escapeHtml(t.navIcon || '')}</span>${escapeHtml(t.navLabel)}`;
+        nb.addEventListener('click', () => showView(t.id));
+        nav.appendChild(nb);
+      }
+    });
+  }
+
+  function syncTabs(viewId) {
+    const inTabs = TABS.some(t => t.id === viewId && !t.href);
+    document.querySelectorAll('.tab-chip').forEach(c => {
+      const on = inTabs && c.dataset.tab === viewId;
+      c.classList.toggle('active', on);
+      // Keep the working tab fully visible: scroll it into view, never squeezed.
+      if (on) c.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
+    });
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', inTabs && b.dataset.tab === viewId));
+    // The player screen is not a tab: hide the strip while watching.
+    document.body.classList.toggle('on-player', viewId === 'playerView');
+  }
+
+  // ---- Views / bottom navigation ----
+  function showView(viewId) {
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    document.getElementById(viewId).classList.add('active');
+    currentView = viewId;
+    syncTabs(viewId);
+    document.body.classList.remove('header-hidden');
+    document.getElementById('mainScroll').scrollTop = 0;
+    updateMiniPlayer();
+  }
+
+  function goBackFromPlayer() {
+    showView('homeView');
+  }
+
+  function openPlayerFromMini(event) {
+    if (event.target.closest('button')) return;
+    showView('playerView');
+  }
+
+  // ---- Header hides on scroll down, returns on scroll up ----
+  (function () {
+    const scroller = document.getElementById('mainScroll');
+    let lastY = 0;
+    scroller.addEventListener('scroll', function () {
+      const y = scroller.scrollTop;
+      if (y > lastY && y > 80) document.body.classList.add('header-hidden');
+      else if (y < lastY) document.body.classList.remove('header-hidden');
+      lastY = y;
+    }, { passive: true });
+  })();
+
+  // ---- Thumbnail + duration capture (memory only, never saved) ----
+  // One capture at a time, in the background, so a big folder scan stays smooth.
+  const thumbQueue = [];
+  let thumbBusy = false;
+  function queueThumb(v, file) { thumbQueue.push([v, file]); processThumbQueue(); }
+  function processThumbQueue() {
+    if (thumbBusy || !thumbQueue.length) return;
+    thumbBusy = true;
+    const [v, file] = thumbQueue.shift();
+    captureThumb(v, file, function () { thumbBusy = false; processThumbQueue(); });
+  }
+  function captureThumb(v, file, done) {
+    if (!v._url) { done(); return; }
+    const tmp = document.createElement('video');
+    tmp.muted = true; tmp.playsInline = true; tmp.preload = 'metadata';
+    let finished = false;
+    const finish = () => {
+      if (finished) return; finished = true;
+      try { tmp.removeAttribute('src'); tmp.load(); } catch (e) {}
+      done();
+    };
+    tmp.addEventListener('loadedmetadata', () => {
+      if (isFinite(tmp.duration) && tmp.duration > 0) {
+        v._duration = tmp.duration;
+        try { tmp.currentTime = Math.min(1, tmp.duration / 4); } catch (e) { finish(); }
+      } else { finish(); }
+    });
+    tmp.addEventListener('seeked', () => {
+      try {
+        const c = document.createElement('canvas');
+        c.width = 320; c.height = 180;
+        c.getContext('2d').drawImage(tmp, 0, 0, 320, 180);
+        v._thumb = c.toDataURL('image/jpeg', 0.72);
+        renderVideos();
+      } catch (e) { /* keep the placeholder */ }
+      finish();
+    });
+    tmp.addEventListener('error', finish);
+    setTimeout(finish, 8000); // give up quietly, placeholder stays
+    tmp.src = v._url;
+  }
+
+  function scanVideoFolder(event) {
+    const files = event.target.files;
+    let added = 0, relinked = 0;
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (!(file.type.startsWith('video/') || file.name.match(/\.(mp4|webm|mkv|mov)$/i))) continue;
+      const title = file.name.replace(/\.[^/.]+$/, "");
+      const size = (file.size / (1024*1024)).toFixed(1) + ' MB';
+      const existing = videoLibrary.find(v => v.title === title && v.size === size);
+      if (existing) {
+        existing._url = URL.createObjectURL(file);
+        relinked++;
+        queueThumb(existing, file);
+      } else {
+        const entry = { title, size, _url: URL.createObjectURL(file) };
+        videoLibrary.push(entry);
+        added++;
+        queueThumb(entry, file);
+      }
+    }
+    saveLibrary();
+    renderVideos();
+    alert(`Indexed ${videoLibrary.length} video clips! (${added} new, ${relinked} relinked)`);
+    event.target.value = ''; // let the same folder be picked again
+  }
+
+  function renderVideos() {
+    const feed = document.getElementById('homeFeed');
+    if (!videoLibrary.length) {
+      feed.innerHTML = '<p class="empty">No videos scanned yet.<br>Use the folder scan above to add your clips.</p>';
+    } else {
+      let html = '';
+      videoLibrary.forEach((v, idx) => {
+        const thumb = v._thumb
+          ? `<img src="${v._thumb}" alt="">`
+          : '<span class="ph">🎬</span>';
+        const dur = fmtDuration(v._duration);
+        const durBadge = dur ? `<span class="dur">${escapeHtml(dur)}</span>` : '';
+        const badge = v._url ? '' : '<div class="relink">Rescan folder to relink</div>';
+        const meta = escapeHtml(v.size) + (dur ? ' • ' + escapeHtml(dur) : '');
+        html += `<div class="feed-card" onclick="loadVideo(${idx})">`
+          + `<div class="feed-thumb">${thumb}${durBadge}</div>`
+          + `<div class="feed-info"><div class="feed-avatar">🎬</div><div style="min-width:0;">`
+          + `<div class="feed-title">${escapeHtml(v.title)}</div>`
+          + `<div class="feed-meta">${meta}</div>${badge}`
+          + `</div></div></div>`;
+      });
+      feed.innerHTML = html;
+    }
+
+    const tbody = document.getElementById('videoTableBody');
+    tbody.innerHTML = '';
+    videoLibrary.forEach((v, idx) => {
+      const action = v._url
+        ? `<button class="btn-red" onclick="loadVideo(${idx})">Load</button>`
+        : `<span style="color:#ffb86b; font-size:0.85em;">Needs rescan</span>`;
+      tbody.innerHTML += `<tr><td>${idx+1}</td><td><b>${escapeHtml(v.title)}</b></td><td>${escapeHtml(v.size)}</td><td>${escapeHtml(fmtDuration(v._duration))}</td><td>${action}</td></tr>`;
+    });
+  }
+
+  function loadVideo(idx) {
+    const v = videoLibrary[idx];
+    if (!v || !v._url) {
+      alert('This clip is not linked yet. Scan the video folder again and it will relink by name and size.');
+      return;
+    }
+    currentIdx = idx;
+    miniClosed = false;
+    const stage = document.getElementById('assignedStageVideo');
+    stage.src = v._url;
+    stage.play();
+    document.getElementById('assignedTitle').textContent = v.title;
+    document.getElementById('assignedSize').textContent = v.size;
+    showView('playerView');
+    updateMiniPlayer();
+  }
+
+  async function togglePiP() {
+    const stage = document.getElementById('assignedStageVideo');
+    try {
+      if (document.pictureInPictureElement) {
+        await document.exitPictureInPicture();
+      } else if (document.pictureInPictureEnabled) {
+        await stage.requestPictureInPicture();
+      }
+    } catch(err) { console.log('PiP error:', err); }
+  }
+
+  // ---- Mini-player ----
+  const stageEl = document.getElementById('assignedStageVideo');
+  function updateMiniPlayer() {
+    const bar = document.getElementById('miniPlayer');
+    const onPlayer = currentView === 'playerView';
+    const hasClip = currentIdx >= 0 && videoLibrary[currentIdx];
+    if (!hasClip || onPlayer || miniClosed) {
+      bar.classList.remove('show');
+      return;
+    }
+    // Show while a clip is loaded and we are anywhere but the player screen.
+    const v = videoLibrary[currentIdx];
+    document.getElementById('miniTitle').textContent = v.title;
+    document.getElementById('miniThumb').innerHTML = v._thumb ? `<img src="${v._thumb}" alt="">` : '🎬';
+    document.getElementById('miniPlayBtn').textContent = stageEl.paused ? '▶' : '⏸';
+    bar.classList.add('show');
+  }
+  function toggleMiniPlay(event) {
+    event.stopPropagation();
+    if (stageEl.paused) stageEl.play(); else stageEl.pause();
+  }
+  function closeMiniPlayer(event) {
+    event.stopPropagation();
+    stageEl.pause();
+    miniClosed = true;
+    updateMiniPlayer();
+  }
+  stageEl.addEventListener('play', updateMiniPlayer);
+  stageEl.addEventListener('pause', updateMiniPlayer);
+  stageEl.addEventListener('ended', updateMiniPlayer);
+
+  // Google Drive Integration
+  function handleAuthClick() {
+    if (!GOOGLE_CLIENT_ID || GOOGLE_CLIENT_ID.indexOf('YOUR_CLIENT_ID') === 0) {
+      document.getElementById('driveMsg').innerHTML = '<span style="color:#e74c3c;">Paste your Google Cloud OAuth Client ID into GOOGLE_CLIENT_ID at the top of the script first.</span>';
+      return;
+    }
+    const client = google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope: 'https://www.googleapis.com/auth/drive.file',
+      callback: (response) => {
+        if (response.access_token) {
+          accessToken = response.access_token;
+          document.getElementById('authStatus').textContent = 'Status: Connected to Google Drive ✅';
+          document.getElementById('authStatus').style.color = '#2ecc71';
+          document.getElementById('saveDriveBtn').disabled = false;
+          document.getElementById('loadDriveBtn').disabled = false;
+          document.getElementById('driveMsg').textContent = 'Successfully authenticated with Google Drive.';
+          const hdr = document.getElementById('hdrConnectBtn');
+          hdr.textContent = 'Drive ✓';
+          hdr.classList.add('connected');
+        }
+      },
+    });
+    client.requestAccessToken();
+  }
+
+  async function saveToGoogleDrive() {
+    if (!accessToken) { alert('Please connect Google Drive first.'); return; }
+    const metadata = { name: 'mastercore_video_backup.json', mimeType: 'application/json' };
+    const fileContent = JSON.stringify(videoLibrary.map(v => ({ title: v.title, size: v.size })));
+    
+    const form = new FormData();
+    form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+    form.append('file', new Blob([fileContent], { type: 'application/json' }));
+
+    try {
+      const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+        method: 'POST',
+        headers: new Headers({ 'Authorization': 'Bearer ' + accessToken }),
+        body: form,
+      });
+      const data = await res.json();
+      document.getElementById('driveMsg').innerHTML = `<span style="color:#2ecc71;">Video catalog saved to Google Drive! (File ID: ${data.id})</span>`;
+    } catch(err) {
+      document.getElementById('driveMsg').innerHTML = `<span style="color:#e74c3c;">Error saving to Drive: ${err}</span>`;
+    }
+  }
+
+  async function loadFromGoogleDrive() {
+    if (!accessToken) { alert('Please connect Google Drive first.'); return; }
+    try {
+      const res = await fetch('https://www.googleapis.com/drive/v3/files?q=name=\'mastercore_video_backup.json\'', {
+        headers: new Headers({ 'Authorization': 'Bearer ' + accessToken }),
+      });
+      const data = await res.json();
+      if (data.files && data.files.length > 0) {
+        const fileId = data.files[0].id;
+        const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+          headers: new Headers({ 'Authorization': 'Bearer ' + accessToken }),
+        });
+        const content = await fileRes.json();
+        videoLibrary = (Array.isArray(content) ? content : []).map(v => ({ title: v.title, size: v.size }));
+        saveLibrary();
+        renderVideos();
+        document.getElementById('driveMsg').innerHTML = `<span style="color:#2ecc71;">Restored ${videoLibrary.length} videos from Google Drive! Scan the folder once to relink them for playback.</span>`;
+      } else {
+        document.getElementById('driveMsg').textContent = 'No video backup found in Google Drive.';
+      }
+    } catch(err) {
+      document.getElementById('driveMsg').innerHTML = `<span style="color:#e74c3c;">Error loading from Drive: ${err}</span>`;
+    }
+  }
+
+  buildTabs();
+  syncTabs('homeView');
+  renderVideos();
+</script>
+</body>
+</html>
